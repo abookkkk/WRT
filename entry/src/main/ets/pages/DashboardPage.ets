@@ -49,6 +49,7 @@ export struct DashboardPage {
   @State private cpuLoad15: string = '--';
   @State private memoryTotal: string = '--';
   @State private memoryUsed: string = '--';
+  @State private memoryAvailable: string = '--';
   @State private memoryPercent: number = 0;
   @State private onlineDevices: number = 0;
   @State private hasError: boolean = false;
@@ -212,6 +213,13 @@ export struct DashboardPage {
                 .color(this.memoryPercent < 50 ? COLOR_GREEN : (this.memoryPercent < 80 ? COLOR_ORANGE : COLOR_RED));
               Text(`${this.memoryPercent}%`)
                 .fontSize(12).fontColor(COLOR_SECONDARY).width('100%').textAlign(TextAlign.End).margin({ top: 4 });
+
+              Row() {
+                Text('可用').fontSize(12).fontColor(COLOR_SECONDARY);
+                Blank();
+                Text(this.memoryAvailable).fontSize(12).fontColor(COLOR_SECONDARY);
+              }
+              .width('100%').margin({ top: 6 });
             }
             .width('100%').padding(20).backgroundColor('#F2FFFFFF').borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
 
@@ -386,15 +394,16 @@ export struct DashboardPage {
         const info: SystemInfo = infoResult.data;
         this.uptime = this.formatUptime(info.uptime);
         const load: number[] = info.load || [];
-        this.cpuLoad1 = load.length > 0 ? load[0].toFixed(2) : '--';
-        this.cpuLoad5 = load.length > 1 ? load[1].toFixed(2) : '--';
-        this.cpuLoad15 = load.length > 2 ? load[2].toFixed(2) : '--';
+        this.cpuLoad1 = load.length > 0 ? this.normalizeLoad(load[0]).toFixed(2) : '--';
+        this.cpuLoad5 = load.length > 1 ? this.normalizeLoad(load[1]).toFixed(2) : '--';
+        this.cpuLoad15 = load.length > 2 ? this.normalizeLoad(load[2]).toFixed(2) : '--';
 
         const mem = info.memory;
         const used: number = mem.total - mem.free - mem.buffered - (mem.cached || 0);
         this.memoryPercent = Math.round((used / mem.total) * 100);
         this.memoryTotal = this.formatBytes(mem.total);
         this.memoryUsed = this.formatBytes(used);
+        this.memoryAvailable = mem.available ? this.formatBytes(mem.available) : '--';
       } else {
         this.hasError = true;
         this.errorMsg = `获取运行信息失败: ${infoResult.error || '未知错误'}`;
@@ -613,6 +622,24 @@ export struct DashboardPage {
       }
     }
     this.canvasCtx.stroke();
+  }
+
+  /**
+   * 把 OpenWrt 的 load average 还原成真实值。
+   *
+   * 坑：`system.info` 返回的 load 是**定点整数**，放大了 65536 倍
+   *   /proc/loadavg → 0.24 0.20 0.10
+   *   system.info  → [15680, 12800, 6784]
+   *   15680 / 65536 = 0.239 ✔
+   * 直接用会显示成 "15680.00" 这种离谱数字。
+   *
+   * 用阈值判断是为了兼容返回浮点数的版本（真实 load 基本不可能超过 100）。
+   */
+  private normalizeLoad(raw: number): number {
+    if (raw > 100) {
+      return raw / 65536;
+    }
+    return raw;
   }
 
   /** 字节/秒 → 人看的速率 */

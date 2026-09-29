@@ -156,6 +156,34 @@ OpenWrt 的 rpcd 有 ACL。**很多看起来理所当然的方法实际会被拒
 ```
 取 `result.values` 这个 map。**传了 `section` 才会返回扁平 values，只传 `config` 会返回所有 section。**
 
+### 5. ⚠️ `system.info` 的 `load` 放大了 65536 倍，`memory` 单位是字节
+
+```json
+{
+  "uptime": 536545,
+  "load": [15680, 12800, 6784],
+  "memory": { "total": 245288960, "free": 34324480, "buffered": 0,
+              "cached": 54083584, "available": 30146560, "shared": 19456000 }
+}
+```
+
+- **`load` 是定点整数**：实测路由器 `/proc/loadavg` 是 `0.24 0.20 0.10`，
+  而 `system.info` 返回 `[15680, 12800, 6784]` —— **除以 65536 正好对上**
+  （15680/65536 = 0.239）。直接用会显示成 `15680.00` 这种离谱数字。
+
+  兼容写法（有些版本返回浮点）：
+  ```typescript
+  private normalizeLoad(raw: number): number {
+    return raw > 100 ? raw / 65536 : raw;   // 真实 load 不可能超过 100
+  }
+  ```
+
+- **`memory` 的单位是字节**（不是 KB）：`total = 245288960` 就是 233.9 MB。
+- `memory.available`（MemAvailable）可以直接当"可用内存"用。
+- 已用内存按 `total - free - buffered - cached` 算，结果和 `free` 命令的 used 基本一致
+  （`free` 的 buff/cache 口径略大，差 2~3 个百分点）。
+- `uptime` 单位是秒。
+
 ---
 
 ## 五、OpenClash 接入规则（实测）

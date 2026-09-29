@@ -50,13 +50,15 @@ export interface SystemBoard {
   release: ReleaseInfo;
 }
 
-/** 内存信息 */
+/** 内存信息（单位：字节） */
 export interface MemoryInfo {
   total: number;
   free: number;
   shared: number;
   buffered: number;
   cached?: number;
+  /** MemAvailable，估算的可用内存（字节） */
+  available?: number;
 }
 
 /** 交换分区信息 */
