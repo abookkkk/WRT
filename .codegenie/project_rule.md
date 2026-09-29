@@ -1,0 +1,233 @@
+# OpenWrt 鸿蒙 App 开发规则
+
+> 用途：发给 DevEco Studio 里的 CodeGenie 或其他 AI，作为长期遵循的项目规则。每次新开对话或让 AI 写代码前，先把这份规则贴给它。
+>
+> **本文件已根据 2026-09-29 的真机（模拟器）实测结果校正过。凡是标「实测」的结论都是在真实路由器上验证过的，不要凭猜测推翻。**
+
+---
+
+## 一、项目背景
+
+我要开发一个鸿蒙 App，用于管理我的 OpenWrt 路由器。所有生成的代码都必须围绕这个场景，不要跑题到通用鸿蒙教程或其他路由器系统。
+
+### 我的 OpenWrt 环境（固定不变）
+
+| 项目 | 值 |
+|---|---|
+| OpenWrt 版本 | 25.12.5 (r33051-f5dae5ece4) |
+| 内核 | 6.12.94 |
+| 目标平台 | mediatek/filogic，aarch64_cortex-a53 |
+| 设备 | Xiaomi Mi Router AX3000T (OpenWrt U-Boot layout) |
+| LuCI HTTP | http://192.168.2.1 |
+| LuCI HTTPS | https://192.168.2.1 |
+| 登录用户名 | root |
+| luci-mod-rpc | 未安装 |
+| luci-app-commands | 未安装 |
+| 已装插件 | luci-app-openclash 0.47.156、luci-theme-argon 2.4.7、luci-app-argon-config 2.4.7 |
+| 包管理器 | apk（不是 opkg） |
+| /ubus 端点 | 可用 |
+
+### 我的鸿蒙开发环境（固定不变）
+
+| 项目 | 值 |
+|---|---|
+| IDE | DevEco Studio 6.1.1 Release (Build #6.1.1.300) |
+| 操作系统 | Windows 11 |
+| 语言 | ArkTS |
+| UI 框架 | ArkUI 声明式 |
+| 目标设备 | 手机为主，兼容平板 |
+| SDK | HarmonyOS 6.1.1 (API 24)，targetSdkVersion / compatibleSdkVersion 都是 6.1.1(24) |
+| 工程路径 | E:\HarmonyNext\Code\OpenWrt |
+| 工程状态 | 已有完整工程，4 个 Tab 页：仪表盘 / 网络接口 / 在线设备 / OpenClash |
+| bundleName | com.example.myapplication |
+
+---
+
+## 二、通信方式规则
+
+1. **只用 ubus RPC（/ubus 端点）**。因为我的系统没装 `luci-mod-rpc`，所以**不要**用 `/cgi-bin/luci/rpc/*` 那套旧接口（会 404）。
+2. **ubus 走 JSON-RPC 2.0 协议**，请求体格式固定为：
+   ```json
+   {"jsonrpc":"2.0","id":1,"method":"call","params":["<session_id>","<object>","<function>",{<params>}]}
+   ```
+   响应形如 `{"jsonrpc":"2.0","id":1,"result":[<code>, <data>]}`。
+   `code === 0` 才算成功；非 0 或返回 `error` 对象都算失败。
+3. **匿名 session id 是 32 个 0**：`00000000000000000000000000000000`，只有 `session.login` 能用它。
+4. **登录**：`session.login`，参数 `{"username":"root","password":"..."}`，成功返回 `ubus_rpc_session`（32 位）和 `timeout`（300 秒）。
+
+---
+
+## 三、ubus 权限白名单（实测，非常重要）
+
+OpenWrt 的 rpcd 有 ACL。**很多看起来理所当然的方法实际会被拒绝**，返回 `-32002 Access denied` 或 ubus code 6。
+写代码前先对照下面两张表，不要凭直觉调用。
+
+### ✅ 允许调用（实测可用）
+
+| 对象 | 方法 | 用途 |
+|---|---|---|
+| `session` | `login` | 登录拿 session |
+| `system` | `board` | 固件/设备信息 |
+| `system` | `info` | 运行时长、内存、负载 |
+| `rc` | `list` | **查服务状态（返回 running / enabled）** |
+| `rc` | `init` | **启停服务（action: start/stop/restart/reload/enable/disable）** |
+| `service` | `list` | 列服务（注意返回结构是嵌套的 instances） |
+| `luci-rpc` | `getDHCPLeases` | **DHCP 租约（在线设备）** |
+| `luci-rpc` | `getHostHints` | **全部已知主机（MAC → 名称/IP）** |
+| `luci-rpc` | `getNetworkDevices` | 网络设备 |
+| `luci-rpc` | `getWirelessDevices` | 无线设备 |
+| `luci-rpc` | `getBoardJSON` | 板级信息 |
+| `network.interface` | `dump` | 接口状态（IP/协议/up） |
+| `network.device` | `status` | 单设备状态 |
+| `iwinfo` | `info` / `scan` / `assoclist` / `freqlist` / `txpowerlist` / `countrylist` | WiFi 详情、信道扫描、关联客户端 |
+| `uci` | `get` / `set` / `commit` / `changes` / `add` / `apply` / `delete` / `order` / `rename` | **读写任意配置（含 wireless、openclash、dhcp、network）** |
+| `file` | `read` / `write` / `list` / `remove` / `exec` / `stat` | **仅限 ACL 白名单里的固定路径/命令** |
+| `log` | `read` | 读日志 |
+| `luci` | `getVersion` / `getProcessList` / `getRealtimeStats` / `getLEDs` 等 | LuCI 辅助信息 |
+
+### ❌ 被拒绝（实测，别用）
+
+| 调用 | 结果 | 正确做法 |
+|---|---|---|
+| `luci.getDHCPLeases` | `-32002 Access denied`（luci 对象上**没有**这个方法） | 改用 `luci-rpc.getDHCPLeases` |
+| `service.restart` | `-32002 Access denied`（service 只放行了 list） | 改用 `rc.init` + `action=restart` |
+| `network.wireless.status` | `-32002 Access denied` | 用 `uci.get wireless` + `iwinfo` |
+| `iwinfo.devices` | `-32002 Access denied`（只放行了 info/scan/assoclist 等） | 用 `iwinfo.info` |
+| `hostapd.<iface>.get_clients` | `-32002 Access denied`（只放行 del_client/wps_*） | 用 `iwinfo.assoclist` |
+| `file.read /tmp/dhcp.leases` | ubus code **6（权限拒绝）**，路径不在白名单 | 用 `luci-rpc.getDHCPLeases` |
+| `file.exec /etc/init.d/xxx` | ubus code **6**，只能跑白名单命令 | 用 `rc.init` |
+| 匿名 session 调任何业务方法 | `-32002 Access denied` | 必须先 `session.login` |
+| `rc.init` + `action=running/enabled/status` | ubus code **2（参数非法）** | 查状态用 `rc.list` |
+
+---
+
+## 四、关键数据结构的真实形状（实测，容易写错）
+
+### 1. `luci-rpc.getDHCPLeases`
+
+**返回的是对象，不是数组！**
+```json
+{"dhcp_leases":[{"expires":29856,"hostname":"HCL","macaddr":"00:E0:4C:89:44:6F","ipaddr":"192.168.2.230"}],
+ "dhcp6_leases":[{"expires":0,"interface":"br-lan","hostname":"HCL","macaddr":"...","duid":"...","iaid":"...","ip6addr":"...","ip6addrs":["..."]}]}
+```
+- `expires` 是**剩余秒数**（相对值），不是时间戳；`<0` 表示永久租约。
+- 主机名字段可能缺失。
+
+### 2. `rc.list`
+```json
+{"openclash":{"start":99,"stop":15,"enabled":true,"running":true}}
+```
+**判断服务是否在跑，就用这个对象 + `running` 字段。**
+
+### 3. `service.list`（不要用它判断 running！）
+```json
+{"openclash":{"instances":{"openclash":{"running":true,"pid":13373,"command":[...]},
+                           "openclash-watchdog":{"running":true,"pid":13374}}}}
+```
+`running` 嵌在 `instances.<名字>.running` 里，**顶层没有 `running` 字段**，写 `data["openclash"].running` 永远是 undefined。
+
+### 4. `uci.get`（指定 config + section）
+```json
+{"values":{"enable":"1","proxy_mode":"rule","cn_port":"9090","http_port":"7890","mixed_port":"7893","dashboard_password":"***"}}
+```
+取 `result.values` 这个 map。**传了 `section` 才会返回扁平 values，只传 `config` 会返回所有 section。**
+
+---
+
+## 五、OpenClash 接入规则（实测）
+
+OpenClash **没有自己的 ubus 对象**，走这三条路：
+
+1. **是否运行** → `rc.list` + `name=openclash`，看 `running`。
+2. **配置** → `uci.get` `config=openclash section=config`，其中：
+   - `dashboard_password` → Clash 外部控制 API 的**密钥**
+   - `cn_port` → 外部控制端口（我的机器是 **9090**）
+   - `proxy_mode` → rule / global / direct
+   - `http_port` 7890、`mixed_port` 7893
+3. **版本/模式** → Clash 外部控制 API：`http://<路由器IP>:<cn_port>/version`、`/configs`
+   - **必须带请求头 `Authorization: Bearer <dashboard_password>`**，否则一律 **401 未经授权**。
+   - 实测：带密钥 → `{"meta":true,"version":"v1.19.30"}`。
+   - **不要**试图用 `file.read` 读 `/etc/openclash/*.yaml` 找密钥 —— 权限拒绝，走 uci。
+
+**启停 OpenClash**：`rc.init` + `{"name":"openclash","action":"start|stop|restart"}`。服务名就叫 `openclash`，没有叫 `clash` 的服务。
+
+---
+
+## 六、ArkTS / ArkUI 硬性规则（踩过的坑）
+
+### 1. 明文 HTTP 必须挂 metadata，否则所有 http:// 请求被系统拒绝
+
+`entry/src/main/resources/base/profile/network_config.json` 写好了还不够，
+**必须在 `entry/src/main/module.json5` 的 `module` 里挂上**：
+
+```json5
+"metadata": [
+  {
+    "name": "ohos.net.network_security_config",
+    "resource": "$profile:network_config"
+  }
+]
+```
+
+`network_config.json` 里把我路由器的地址都列进 `domain-config` 并设 `cleartextTrafficPermitted: true`：
+`192.168.2.1`、`192.168.1.1`、`192.168.0.1`、`openwrt.lan`。
+
+**漏了这段 metadata 的表现**：App 能编译能安装，但所有请求静默失败，日志里看不到「明文被拦截」之类的提示。
+
+### 2. ⚠️ `@Builder` 值传递参数不会触发 UI 刷新（本项目最隐蔽的 bug）
+
+**错误写法**：
+```typescript
+@Builder
+row(label: string, value: string) {          // 值传递参数
+  Row() { Text(label); Text(value) }
+}
+
+// 调用
+this.row('版本', this.version);               // version 变了，这一行永远不刷新！
+```
+
+**正确写法**：`@Builder` 不接参数，**直接读 `this.xxx`**，才会建立状态依赖：
+```typescript
+@Builder
+clashInfoRows() {
+  Column() {
+    Row() { Text('版本'); Text(this.version) }   // 直接读 @State → 会刷新
+  }.width('100%')
+}
+```
+
+**判断依据**：如果某个 `@State` 只被当作参数传进 `@Builder`，它就"哑"了。
+本项目 `DevicesPage` 把设备卡片**全部内联**，就是为了绕开这个坑 —— 保持这个做法。
+
+**症状**：日志显示数据已经拿到了，但界面上一直显示初始值（`--`）。
+
+### 3. 其他约定
+
+- 用 `import { http } from '@kit.NetworkKit'` 或 `import http from '@ohos.net.http'` 都行，后者已废弃但仍可用。
+- 不要写 `private client!: OpenWrtClient;` 这种断言（`arkts-no-definite-assignment` 警告），建议写成 `private client: OpenWrtClient | null = null;`。
+- `promptAction.showToast` / `showDialog` 已废弃，但当前工程在用，暂时不强制改。
+- 对象字面量**不是**被禁止的；同文件里 `Record<string, string>` 字面量就在用。不要为了"规避"而到处 `JSON.parse`。
+
+---
+
+## 七、构建 / 部署备忘
+
+- 命令行编译（DevEco 没开时可用）：
+  ```powershell
+  $env:DEVECO_SDK_HOME = "E:\HarmonyNext\DevEco Studio\sdk"
+  $env:JAVA_HOME = "E:\HarmonyNext\DevEco Studio\jbr"
+  & "E:\HarmonyNext\DevEco Studio\tools\hvigor\bin\hvigorw.bat" `
+      --mode module -p product=default -p buildMode=debug assembleHap --no-daemon
+  ```
+- 产物：`entry/build/default/outputs/default/entry-default-unsigned.hap`
+- **HarmonyOS 模拟器接受未签名 HAP**，可直接装：
+  ```powershell
+  $hdc = "E:\HarmonyNext\DevEco Studio\sdk\default\openharmony\toolchains\hdc.exe"
+  & $hdc install -r <hap路径>
+  & $hdc shell aa start -a EntryAbility -b com.example.myapplication
+  ```
+- 抓日志：`hdc shell hilog -r`（清空）→ 操作 → `hdc shell "hilog -x"`，过滤 `JSAPP`
+- 截图：`hdc shell snapshot_display -f /data/local/tmp/s.jpg` + `hdc file recv`
+- 模拟器 `hdc shell` 是 **uid=2000(shell)，不是 root**。
+- **不要在 DevEco 开着工程时并行跑命令行编译** —— 会让 IDE 状态错乱（运行配置丢设备、报「无法在 '<默认>' 上运行 'entry'」）。

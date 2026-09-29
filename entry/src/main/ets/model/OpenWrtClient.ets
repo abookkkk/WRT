@@ -1,0 +1,469 @@
+/**
+ * OpenWrt ubus 网络请求工具类
+ * 
+ * 通过 OpenWrt 的 /ubus JSON-RPC 2.0 端点通信。
+ * @ohos.net.http 模块实现，纯 ArkTS，零外部依赖。
+ * 
+ * 注意：ArkTS 严格模式禁止对象字面量，
+ * 所有参数对象通过 JSON.parse 构建。
+ */
+
+import http from '@ohos.net.http';
+import { BusinessError } from '@kit.BasicServicesKit';
+import type {
+  UbusResponse,
+  UbusResult,
+  SessionInfo,
+  SystemBoard,
+  SystemInfo,
+  NetworkDump,
+  DhcpLease,
+  LuciDhcpLease,
+  LuciDhcpLeaseResponse,
+  RcServiceState,
+  HostHint,
+  ServiceInstance,
+  ServiceStatus,
+  OpenClashSettings,
+  HttpResult
+} from './OpenWrtModels';
+
+const ANONYMOUS_SESSION: string = '00000000000000000000000000000000';
+const DEFAULT_TIMEOUT: number = 10000;
+let requestIdCounter: number = 0;
+
+/**
+ * 构建 JSON 对象（ArkTS 安全方式）
+ * 由于 ArkTS 禁止对象字面量，使用 JSON.parse 替代
+ */
+function json(text: string): Object {
+  return JSON.parse(text);
+}
+
+export class OpenWrtClient {
+  private baseUrl: string;
+  private host: string;
+  private httpClient: http.HttpRequest;
+  private sessionId: string = '';
+  private loggedIn: boolean = false;
+  private connectTimeout: number;
+  private readTimeout: number;
+
+  constructor(
+    host: string,
+    port: number = 80,
+    useHttps: boolean = false,
+    connectTimeout: number = DEFAULT_TIMEOUT,
+    readTimeout: number = DEFAULT_TIMEOUT
+  ) {
+    const protocol: string = useHttps ? 'https' : 'http';
+    this.host = host;
+    this.baseUrl = `${protocol}://${host}:${port}`;
+    this.connectTimeout = connectTimeout;
+    this.readTimeout = readTimeout;
+    this.httpClient = http.createHttp();
+  }
+
+  async login(username: string, password: string): Promise<boolean> {
+    try {
+      const result: UbusResult<SessionInfo> = await this.ubusCall<SessionInfo>(
+        ANONYMOUS_SESSION,
+        'session',
+        'login',
+        json(`{"username":"${username}","password":"${password}"}`)
+      );
+      if (result.success && result.data) {
+        this.sessionId = result.data.ubus_rpc_session;
+        this.loggedIn = true;
+        return true;
+      }
+      return false;
+    } catch (e) {
+      console.error(`[OpenWrtClient] 登录异常: ${JSON.stringify(e)}`);
+      return false;
+    }
+  }
+
+  isLoggedIn(): boolean {
+    return this.loggedIn && this.sessionId.length > 0;
+  }
+
+  getSessionId(): string {
+    return this.sessionId;
+  }
+
+  restoreSession(sessionId: string): void {
+    if (sessionId && sessionId.length === 32) {
+      this.sessionId = sessionId;
+      this.loggedIn = true;
+    }
+  }
+
+  /** 路由器 IP / 主机名（不含协议和端口） */
+  getHost(): string {
+    return this.host;
+  }
+
+  /** 基础地址，形如 http://192.168.2.1:80 */
+  getBaseUrl(): string {
+    return this.baseUrl;
+  }
+
+  /**
+   * 读取 OpenClash 的 uci 配置摘要（config 段）。
+   *
+   * 用途：拿到 Clash 外部控制 API 的端口和密钥。
+   * dashboard_password 就是 API 密钥，不带它请求 9090 端口会返回 401。
+   * 注意不能用 file.read 去读 /etc/openclash/*.yaml —— ACL 没放行，返回 code 6。
+   */
+  async getOpenClashSettings(): Promise<OpenClashSettings | null> {
+    const r: UbusResult<Record<string, Object>> = await this.ubusCallAuth<Record<string, Object>>(
+      'uci', 'get', json('{"config":"openclash","section":"config"}')
+    );
+    if (!r.success || !r.data) {
+      console.error(`[OpenWrtClient] getOpenClashSettings 失败: success=${r.success} code=${r.code} err=${r.error}`);
+      return null;
+    }
+
+    const values: Record<string, Object> | undefined = r.data['values'] as Record<string, Object>;
+    if (!values) {
+      console.error(`[OpenWrtClient] getOpenClashSettings 无 values: ${JSON.stringify(r.data).substring(0, 160)}`);
+      return null;
+    }
+
+    const settings: OpenClashSettings = {
+      enabled: String(values['enable'] || '0') === '1',
+      proxyMode: String(values['proxy_mode'] || ''),
+      apiPort: parseInt(String(values['cn_port'] || '9090')) || 9090,
+      apiSecret: String(values['dashboard_password'] || ''),
+      httpPort: String(values['http_port'] || ''),
+      mixedPort: String(values['mixed_port'] || '')
+    };
+    return settings;
+  }
+
+  /**
+   * 切换 OpenClash 运行模式（rule / global / direct）。
+   * 走 uci set + commit，然后需要重启服务才生效。
+   */
+  async setOpenClashMode(mode: string): Promise<boolean> {
+    const setResult: UbusResult<Object> = await this.ubusCallAuth<Object>(
+      'uci', 'set', json(`{"config":"openclash","section":"config","values":{"proxy_mode":"${mode}"}}`)
+    );
+    if (!setResult.success) {
+      return false;
+    }
+    const commitResult: UbusResult<Object> = await this.ubusCallAuth<Object>(
+      'uci', 'commit', json('{"config":"openclash"}')
+    );
+    return commitResult.success;
+  }
+
+  /**
+   * 切换 OpenClash 总开关（enable）。
+   * 打开后建议再调 restartService('openclash') 让其生效。
+   */
+  async setOpenClashEnabled(enabled: boolean): Promise<boolean> {
+    const flag: string = enabled ? '1' : '0';
+    const setResult: UbusResult<Object> = await this.ubusCallAuth<Object>(
+      'uci', 'set', json(`{"config":"openclash","section":"config","values":{"enable":"${flag}"}}`)
+    );
+    if (!setResult.success) {
+      return false;
+    }
+    const commitResult: UbusResult<Object> = await this.ubusCallAuth<Object>(
+      'uci', 'commit', json('{"config":"openclash"}')
+    );
+    return commitResult.success;
+  }
+
+  async getSystemBoard(): Promise<UbusResult<SystemBoard>> {
+    return this.ubusCallAuth<SystemBoard>('system', 'board', json('{}'));
+  }
+
+  async getSystemInfo(): Promise<UbusResult<SystemInfo>> {
+    return this.ubusCallAuth<SystemInfo>('system', 'info', json('{}'));
+  }
+
+  async getNetworkDump(): Promise<UbusResult<NetworkDump>> {
+    return this.ubusCallAuth<NetworkDump>('network.interface', 'dump', json('{}'));
+  }
+
+  /**
+   * 获取 DHCP 租约（在线设备列表）。
+   *
+   * 重要：必须调用 luci-rpc 对象，不要用 luci 对象：
+   *   luci.getDHCPLeases      -> -32002 Access denied（luci 上根本没有这个方法）
+   *   luci-rpc.getDHCPLeases  -> 正常返回
+   * luci-rpc 由 rpcd-mod-luci 提供，本机已安装。
+   *
+   * 另外：不要用 file.read 读 /tmp/dhcp.leases 兜底 —— ACL 只放行了固定路径清单，
+   * /tmp/dhcp.leases 不在清单里，会返回 ubus code 6（权限拒绝）。
+   */
+  async getDhcpLeases(): Promise<UbusResult<DhcpLease[]>> {
+    const resp = await this.ubusCallAuth<LuciDhcpLeaseResponse>(
+      'luci-rpc', 'getDHCPLeases', json('{"family":0}')
+    );
+
+    if (!resp.success || !resp.data) {
+      return {
+        success: false,
+        code: resp.code,
+        data: null,
+        error: resp.error || '获取 DHCP 租约失败'
+      };
+    }
+
+    // 返回体是 { dhcp_leases: [...], dhcp6_leases: [...] }，不是裸数组
+    const raw: LuciDhcpLease[] = resp.data.dhcp_leases || [];
+    const leases: DhcpLease[] = [];
+    const now: number = Math.floor(Date.now() / 1000);
+
+    for (let i = 0; i < raw.length; i++) {
+      const item: LuciDhcpLease = raw[i];
+      // dnsmasq 用 '*' 表示未知主机名，统一转成空字符串，由页面兜底显示
+      const hostname: string = (item.hostname && item.hostname !== '*') ? item.hostname : '';
+
+      // expires 是剩余秒数；<0 表示永久租约
+      let endTime: number;
+      if (typeof item.expires === 'number') {
+        endTime = item.expires < 0 ? now + (365 * 24 * 3600) : now + item.expires;
+      } else {
+        endTime = 0;
+      }
+
+      leases.push({
+        mac: item.macaddr || '',
+        ip: item.ipaddr || '',
+        hostname: hostname,
+        start: 0,
+        end: endTime,
+        duid: item.duid
+      });
+    }
+
+    return { success: true, code: 0, data: leases };
+  }
+
+  /**
+   * 获取全部已知主机（MAC -> 名称/IP），来源 luci-rpc.getHostHints。
+   * 比 DHCP 租约更全：含静态主机、路由器自身、以及 ARP 表里还在的设备。
+   */
+  async getHostHints(): Promise<UbusResult<Record<string, HostHint>>> {
+    return this.ubusCallAuth<Record<string, HostHint>>('luci-rpc', 'getHostHints', json('{}'));
+  }
+
+  /**
+   * 重启服务。
+   *
+   * 重要：不要用 service.restart —— ACL 只给 service 对象放行了 list，
+   * 调 service.restart 会返回 -32002 Access denied。
+   * 必须走 rc.init：rc.list / rc.init 都在 ACL 白名单里。
+   */
+  async restartService(serviceName: string): Promise<UbusResult<Object>> {
+    return this.ubusCallAuth<Object>('rc', 'init', json(`{"name":"${serviceName}","action":"restart"}`));
+  }
+
+  /** 启动服务（同样走 rc.init） */
+  async startService(serviceName: string): Promise<UbusResult<Object>> {
+    return this.ubusCallAuth<Object>('rc', 'init', json(`{"name":"${serviceName}","action":"start"}`));
+  }
+
+  /** 停止服务（同样走 rc.init） */
+  async stopService(serviceName: string): Promise<UbusResult<Object>> {
+    return this.ubusCallAuth<Object>('rc', 'init', json(`{"name":"${serviceName}","action":"stop"}`));
+  }
+
+  async listServices(serviceName?: string): Promise<UbusResult<Record<string, ServiceStatus>>> {
+    let args: Object;
+    if (serviceName) {
+      args = json(`{"name":"${serviceName}"}`);
+    } else {
+      args = json('{}');
+    }
+    return this.ubusCallAuth<Record<string, ServiceStatus>>('service', 'list', args);
+  }
+
+  /**
+   * 查询服务状态（running / enabled）。
+   *
+   * 用 rc.list：直接返回 {running, enabled}，形如
+   *   {"openclash":{"start":99,"stop":15,"enabled":true,"running":true}}
+   *
+   * 注意不要用 service.list 的顶层 running —— 实际结构是嵌套在
+   *   data["openclash"].instances["openclash"].running
+   * 里面的，顶层根本没有 running 字段，取到的永远是 undefined。
+   */
+  async getServiceState(serviceName: string): Promise<RcServiceState | null> {
+    const result: UbusResult<Record<string, RcServiceState>> =
+      await this.ubusCallAuth<Record<string, RcServiceState>>(
+        'rc', 'list', json(`{"name":"${serviceName}"}`)
+      );
+    if (result.success && result.data) {
+      const state: RcServiceState | undefined = result.data[serviceName];
+      return state || null;
+    }
+    return null;
+  }
+
+  async isServiceRunning(serviceName: string): Promise<boolean> {
+    const state: RcServiceState | null = await this.getServiceState(serviceName);
+    if (state && typeof state.running === 'boolean') {
+      return state.running;
+    }
+
+    // rc.list 不可用时退回 service.list，按 instances 嵌套结构判断
+    const result: UbusResult<Record<string, ServiceStatus>> = await this.listServices(serviceName);
+    if (result.success && result.data) {
+      const svc: ServiceStatus | undefined = result.data[serviceName];
+      if (svc && svc.instances) {
+        const keys: string[] = Object.keys(svc.instances);
+        for (let i = 0; i < keys.length; i++) {
+          const inst: ServiceInstance | undefined = svc.instances[keys[i]];
+          if (inst && inst.running === true) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  async getFormattedUptime(): Promise<string> {
+    const result: UbusResult<SystemInfo> = await this.getSystemInfo();
+    if (result.success && result.data) {
+      return this.formatUptime(result.data.uptime);
+    }
+    return '获取失败';
+  }
+
+  async getMemoryUsagePercent(): Promise<number> {
+    const result: UbusResult<SystemInfo> = await this.getSystemInfo();
+    if (result.success && result.data) {
+      const mem = result.data.memory;
+      const used: number = mem.total - mem.free - mem.buffered - (mem.cached || 0);
+      return Math.round((used / mem.total) * 100);
+    }
+    return 0;
+  }
+
+  async getOnlineDeviceCount(): Promise<number> {
+    const result: UbusResult<DhcpLease[]> = await this.getDhcpLeases();
+    if (result.success && result.data) {
+      const now: number = Math.floor(Date.now() / 1000);
+      return result.data.filter((lease: DhcpLease) => lease.end > now).length;
+    }
+    return 0;
+  }
+
+  // ======================== 核心 ubus 调用 ========================
+
+  /** 带身份认证的 ubus 调用（自动携带 sessionId） */
+  private async ubusCallAuth<T>(
+    obj: string, func: string, args: Object
+  ): Promise<UbusResult<T>> {
+    if (!this.loggedIn || !this.sessionId) {
+      return { success: false, code: -1, data: null, error: '未登录，请先调用 login()' };
+    }
+    return this.ubusCall<T>(this.sessionId, obj, func, args);
+  }
+
+  /** 底层 ubus 调用 */
+  private async ubusCall<T>(
+    sessionId: string, obj: string, func: string, args: Object
+  ): Promise<UbusResult<T>> {
+    const requestId: number = ++requestIdCounter;
+
+    // 手动构建 JSON-RPC 请求字符串（避免对象字面量）
+    const bodyStr: string = `{"jsonrpc":"2.0","id":${requestId},"method":"call",` +
+      `"params":["${sessionId}","${obj}","${func}",${JSON.stringify(args)}]}`;
+
+    try {
+      const response: HttpResult = await this.httpRequest(
+        `${this.baseUrl}/ubus`, bodyStr
+      );
+
+      if (!response.success) {
+        return { success: false, code: -2, data: null, error: response.error || 'HTTP 请求失败' };
+      }
+
+      const text: string = response.data || '{}';
+      const ubusResp: UbusResponse = JSON.parse(text);
+      const ubusCode: number = ubusResp.result[0] as number;
+
+      if (ubusCode === 0) {
+        return { success: true, code: 0, data: ubusResp.result[1] as T };
+      } else {
+        return { success: false, code: ubusCode, data: null, error: `ubus 调用失败，返回码: ${ubusCode}` };
+      }
+    } catch (e) {
+      const err: BusinessError = e as BusinessError;
+      return { success: false, code: -3, data: null, error: `请求异常: ${err.message || JSON.stringify(e)}` };
+    }
+  }
+
+  // ======================== HTTP 底层请求 ========================
+
+  private httpRequest(url: string, bodyStr: string): Promise<HttpResult> {
+    return new Promise<HttpResult>((resolve) => {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      };
+
+      const requestOptions: http.HttpRequestOptions = {
+        method: http.RequestMethod.POST,
+        header: headers,
+        extraData: bodyStr,
+        connectTimeout: this.connectTimeout,
+        readTimeout: this.readTimeout
+      };
+
+      this.httpClient.request(url, requestOptions, (err: BusinessError | null, data: http.HttpResponse) => {
+        if (err) {
+          resolve({ success: false, error: `网络错误: ${err.message}`, statusCode: err.code });
+          return;
+        }
+
+        const statusCode: number = data.responseCode;
+        if (statusCode >= 200 && statusCode < 300) {
+          resolve({ success: true, data: data.result as string, statusCode });
+        } else {
+          resolve({ success: false, data: data.result as string, error: `HTTP ${statusCode}`, statusCode });
+        }
+      });
+    });
+  }
+
+  private formatUptime(seconds: number): string {
+    const days: number = Math.floor(seconds / 86400);
+    const hours: number = Math.floor((seconds % 86400) / 3600);
+    const minutes: number = Math.floor((seconds % 3600) / 60);
+    const parts: string[] = [];
+    if (days > 0) parts.push(`${days} 天`);
+    if (hours > 0) parts.push(`${hours} 小时`);
+    if (minutes > 0) parts.push(`${minutes} 分钟`);
+    if (parts.length === 0) parts.push('不到 1 分钟');
+    return parts.join(' ');
+  }
+
+  async ping(): Promise<boolean> {
+    try {
+      const result: UbusResult<Record<string, string>> =
+        await this.ubusCall<Record<string, string>>(ANONYMOUS_SESSION, 'system', 'board', json('{}'));
+      return result.success;
+    } catch {
+      return false;
+    }
+  }
+
+  destroy(): void {
+    try {
+      this.httpClient.destroy();
+    } catch (e) {
+      console.error(`[OpenWrtClient] 销毁异常: ${JSON.stringify(e)}`);
+    }
+    this.sessionId = '';
+    this.loggedIn = false;
+  }
+}
