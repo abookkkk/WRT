@@ -12,6 +12,8 @@
  */
 
 import { promptAction } from '@kit.ArkUI';
+import { window } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
 import { OpenWrtClient } from '../model/OpenWrtClient';
 import { SessionStore } from '../model/SessionStore';
 import { GlobalContext } from '../model/GlobalContext';
@@ -31,6 +33,35 @@ export struct HomePage {
   private onLogout!: () => void;
 
   @State private currentIndex: number = 0;
+  /**
+   * 底部安全区（手势条 / 导航栏）高度，单位 vp，用来给标签栏下面补一条同色底。
+   *
+   * 背景：页面内容默认只铺到安全区边界，标签栏也就止步于手势条上方，
+   * 屏幕最底部会露出一条没被填充的页面底色（实测 1316×2832 截图里是 96px，
+   * 颜色 245,246,248 正是渐变尾色），看起来像界面没做完。
+   * 拿窗口避让区的真实高度来铺这一条，比写死数值更稳（平板 / 三键导航都不一样）。
+   */
+  @State private bottomInset: number = 0;
+
+  aboutToAppear(): void {
+    this.measureBottomInset();
+  }
+
+  /** 读窗口底部避让区（取系统区与手势条区的较大值），换算成 vp */
+  private async measureBottomInset(): Promise<void> {
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      const win: window.Window = await window.getLastWindow(ctx);
+      const systemArea: window.AvoidArea = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
+      const indicatorArea: window.AvoidArea = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR);
+      const px: number = Math.max(systemArea.bottomRect.height, indicatorArea.bottomRect.height);
+      this.bottomInset = px2vp(px);
+      console.info(`[HomePage] 底部安全区 ${px}px = ${this.bottomInset}vp`);
+    } catch (e) {
+      // 拿不到就退回 0：标签栏少铺一条，功能不受影响
+      console.warn('[HomePage] 读取底部安全区失败: ' + JSON.stringify(e));
+    }
+  }
 
   build() {
     Stack({ alignContent: Alignment.TopStart }) {
@@ -114,6 +145,25 @@ export struct HomePage {
       }
       .width('100%')
       .height('100%')
+
+      // ===== 标签栏下方的安全区补白 =====
+      // 标签栏只会铺到安全区边界，屏幕最底部那条手势条区域露出的是页面渐变底色，
+      // 看着像界面没做完。这里补一条与标签栏同色、同样模糊的色带，把标签栏"接"到屏幕物理底部。
+      //
+      // 为什么用绝对定位（下面这些都在模拟器上逐像素比对过）：
+      //   · 给 Tabs 加 barHeight + expandSafeArea → 无效：标签栏始终锚在安全区边界，
+      //     expandSafeArea 只让 Tabs 盒子变大，标签栏反而向上多吃 28vp 内容区，底下灰带照旧；
+      //   · 让内容列 expandSafeArea 再把补白条当子元素 → 同样无效：expandSafeArea 只让
+      //     **叶子节点**的绘制区域外扩（渐变背景能吃到底部就是这个原因），容器里的子元素不会被挪进安全区。
+      //   · 现在这样：补白条脱离布局流，绝对定位到内容框下沿（y='100%' 即安全区底边）再往下铺 bottomInset，
+      //     正好落在手势条区域，且不会挤压 Tabs、不影响标签栏位置。
+      Column()
+        .width('100%')
+        .height(this.bottomInset)
+        .backgroundColor('#D9FFFFFF')
+        .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+        .position({ x: 0, y: '100%' })
+        .hitTestBehavior(HitTestMode.None)
     }
     .width('100%')
     .height('100%')
