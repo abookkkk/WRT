@@ -60,6 +60,9 @@ export struct DashboardPage {
   @State private wanTxRate: number = 0;
   @State private rateReady: boolean = false;
   @State private wanDevice: string = '';
+  /** 上下行各自的量程峰值（双 Y 轴，两条曲线互不压缩） */
+  @State private rxPeakLabel: string = '--';
+  @State private txPeakLabel: string = '--';
 
   private rateTimer: number = -1;
   /** 页面不可见时暂停采样 */
@@ -68,6 +71,9 @@ export struct DashboardPage {
   private prevRx: number = 0;
   private prevTx: number = 0;
   private prevStamp: number = 0;
+  /** 绘图用的峰值（非状态，drawChart 直接读） */
+  private rxPeak: number = 0;
+  private txPeak: number = 0;
 
   /** 趋势图画布 */
   private canvasSettings: RenderingContextSettings = new RenderingContextSettings(true);
@@ -125,6 +131,11 @@ export struct DashboardPage {
                     .fontWeight(FontWeight.Bold)
                     .fontColor(C_TEXT_1)
                     .margin({ top: 2 });
+
+                  Text('峰值 ' + this.rxPeakLabel)
+                    .fontSize(10)
+                    .fontColor(C_SUCCESS)
+                    .margin({ top: 1 });
                 }
                 .layoutWeight(1)
                 .alignItems(HorizontalAlign.Start);
@@ -145,6 +156,11 @@ export struct DashboardPage {
                     .fontWeight(FontWeight.Bold)
                     .fontColor(C_TEXT_1)
                     .margin({ top: 2 });
+
+                  Text('峰值 ' + this.txPeakLabel)
+                    .fontSize(10)
+                    .fontColor(C_WARNING)
+                    .margin({ top: 1 });
                 }
                 .layoutWeight(1)
                 .alignItems(HorizontalAlign.Start);
@@ -160,7 +176,7 @@ export struct DashboardPage {
                   this.drawChart();
                 });
 
-              Text('最近 60 秒 · 每 2 秒采样')
+              Text('最近 60 秒 · 每 2 秒采样 · 上下行各自独立刻度')
                 .fontSize(F_TINY)
                 .fontColor(C_TEXT_3)
                 .width('100%')
@@ -486,6 +502,7 @@ export struct DashboardPage {
       while (this.rateHistory.length > RATE_HISTORY) {
         this.rateHistory.shift();
       }
+      this.recomputePeaks();
       this.drawChart();
     }
 
@@ -494,12 +511,30 @@ export struct DashboardPage {
     this.prevStamp = now;
   }
 
+  /** 统计当前窗口内上下行各自的峰值（用作双 Y 轴的量程） */
+  private recomputePeaks(): void {
+    let rx: number = 0;
+    let tx: number = 0;
+    for (let i = 0; i < this.rateHistory.length; i++) {
+      if (this.rateHistory[i].rx > rx) {
+        rx = this.rateHistory[i].rx;
+      }
+      if (this.rateHistory[i].tx > tx) {
+        tx = this.rateHistory[i].tx;
+      }
+    }
+    this.rxPeak = rx;
+    this.txPeak = tx;
+    this.rxPeakLabel = this.formatRate(rx);
+    this.txPeakLabel = this.formatRate(tx);
+  }
+
   /**
-   * 画最近 60 秒的速率曲线。
+   * 画最近 60 秒的速率曲线（双 Y 轴）。
    *
-   * 用 Canvas + 命令式绘制（而不是声明式的 Shape）：能拿到画布真实宽高自适应屏幕，
-   * 也能在数据更新时直接重绘。最新的点在右边，采样不足时曲线从左往右生长。
-   * 绿色 = 下行（带渐变填充），橙色 = 上行。
+   * 上下行**各自独立缩放**：两条曲线都尽量铺满画布高度，
+   * 这样即使下行比上行大几十倍，上行曲线也不会被压成一条直线。
+   * 代价是两条曲线的纵向高度不能直接横向比较，所以峰值分别标注出来。
    */
   private drawChart(): void {
     const w: number = this.canvasCtx.width;
@@ -515,16 +550,9 @@ export struct DashboardPage {
       return;
     }
 
-    // Y 轴上限取窗口内最大值，下限 1 KB/s，避免除零和曲线抖动
-    let max: number = 1024;
-    for (let i = 0; i < n; i++) {
-      if (this.rateHistory[i].rx > max) {
-        max = this.rateHistory[i].rx;
-      }
-      if (this.rateHistory[i].tx > max) {
-        max = this.rateHistory[i].tx;
-      }
-    }
+    // 各自量程：留 8% 顶部余量，曲线不会贴顶；下限 1 KB/s 防除零
+    let rxScale: number = this.rxPeak > 1024 ? this.rxPeak * 1.08 : 1024;
+    let txScale: number = this.txPeak > 1024 ? this.txPeak * 1.08 : 1024;
 
     const padTop: number = 3;
     const usable: number = h - padTop;
@@ -539,12 +567,12 @@ export struct DashboardPage {
     this.canvasCtx.lineTo(w, h - 0.5);
     this.canvasCtx.stroke();
 
-    // 下行：先填充曲线下方
+    // 下行：先填充曲线下方（按下行自己的刻度）
     this.canvasCtx.beginPath();
     this.canvasCtx.moveTo(x0, h);
     for (let i = 0; i < n; i++) {
       const x: number = x0 + i * stepX;
-      const y: number = padTop + usable * (1 - this.rateHistory[i].rx / max);
+      const y: number = padTop + usable * (1 - this.rateHistory[i].rx / rxScale);
       this.canvasCtx.lineTo(x, y);
     }
     this.canvasCtx.lineTo(x0 + (n - 1) * stepX, h);
@@ -560,7 +588,7 @@ export struct DashboardPage {
     this.canvasCtx.strokeStyle = C_SUCCESS;
     for (let i = 0; i < n; i++) {
       const x: number = x0 + i * stepX;
-      const y: number = padTop + usable * (1 - this.rateHistory[i].rx / max);
+      const y: number = padTop + usable * (1 - this.rateHistory[i].rx / rxScale);
       if (i === 0) {
         this.canvasCtx.moveTo(x, y);
       } else {
@@ -569,7 +597,7 @@ export struct DashboardPage {
     }
     this.canvasCtx.stroke();
 
-    // 上行：只描边
+    // 上行：只描边（按上行自己的刻度）
     this.canvasCtx.beginPath();
     this.canvasCtx.lineWidth = 2;
     this.canvasCtx.lineJoin = 'round';
@@ -577,7 +605,7 @@ export struct DashboardPage {
     this.canvasCtx.strokeStyle = C_WARNING;
     for (let i = 0; i < n; i++) {
       const x: number = x0 + i * stepX;
-      const y: number = padTop + usable * (1 - this.rateHistory[i].tx / max);
+      const y: number = padTop + usable * (1 - this.rateHistory[i].tx / txScale);
       if (i === 0) {
         this.canvasCtx.moveTo(x, y);
       } else {
