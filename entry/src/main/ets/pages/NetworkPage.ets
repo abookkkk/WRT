@@ -11,7 +11,7 @@
 
 import { promptAction } from '@kit.ArkUI';
 import { OpenWrtClient } from '../model/OpenWrtClient';
-import type { NetworkInterface, NetAddress } from '../model/OpenWrtModels';
+import type { NetworkInterface, NetAddress, NetDeviceStats } from '../model/OpenWrtModels';
 import {
   C_PRIMARY, C_SUCCESS, C_WARNING, C_TEXT_1, C_TEXT_2, C_TEXT_3,
   C_CARD, C_DIVIDER, C_FILL,
@@ -20,6 +20,16 @@ import {
 } from '../common/Theme';
 
 const COLOR_CARD_BG: ResourceColor = C_CARD;
+
+/** 实时速率的采样间隔（毫秒）。一次采样只要 1 个 ubus 请求。 */
+const RATE_SAMPLE_MS: number = 3000;
+
+/** 上一次采样记录，用来算差值 */
+class RateSample {
+  device: string = '';
+  rx: number = 0;
+  tx: number = 0;
+}
 
 @Component
 export struct NetworkPage {
@@ -30,11 +40,23 @@ export struct NetworkPage {
   @State private isRefreshing: boolean = false;
   @State private hasError: boolean = false;
   @State private errorMsg: string = '';
-  /** 每次加载自增，用来强制 ForEach 重建卡片（否则 @Builder 的值传递参数不会刷新） */
+  /** 每次加载 / 速率更新自增，强制 ForEach 重建卡片（否则 @Builder 的值传递参数不会刷新） */
   @State private dataVersion: number = 0;
+
+  /** 速率采样定时器；-1 表示未启动 */
+  private rateTimer: number = -1;
+  /** 页面是否可见 —— 不可见就跳过采样，别白白打扰路由器 */
+  private pageVisible: boolean = true;
+  private prevSamples: RateSample[] = [];
+  private prevStamp: number = 0;
 
   aboutToAppear(): void {
     this.loadNetworkData();
+    this.startRateSampler();
+  }
+
+  aboutToDisappear(): void {
+    this.stopRateSampler();
   }
 
   build() {
@@ -81,6 +103,10 @@ export struct NetworkPage {
     }
     .width('100%')
     .height('100%')
+    // 页面滑出屏幕后暂停速率采样，别在后台一直打扰路由器
+    .onVisibleAreaChange([0.0, 0.5], (isVisible: boolean, ratio: number) => {
+      this.pageVisible = isVisible;
+    })
   }
 
   @Builder
@@ -189,6 +215,15 @@ export struct NetworkPage {
                 .fontSize(F_TINY)
                 .fontColor(C_TEXT_2)
                 .margin({ left: 4 });
+              if (iface.rateReady) {
+                Text(this.formatRate(iface.rxRate))
+                  .fontSize(F_TINY)
+                  .fontColor(C_SUCCESS)
+                  .backgroundColor('#1A1DB954')
+                  .padding({ left: 6, right: 6, top: 1, bottom: 1 })
+                  .borderRadius(6)
+                  .margin({ left: 6 });
+              }
             }
             .alignItems(VerticalAlign.Center);
 
@@ -217,6 +252,15 @@ export struct NetworkPage {
                 .fontSize(F_TINY)
                 .fontColor(C_TEXT_2)
                 .margin({ left: 4 });
+              if (iface.rateReady) {
+                Text(this.formatRate(iface.txRate))
+                  .fontSize(F_TINY)
+                  .fontColor(C_WARNING)
+                  .backgroundColor('#1AFF9500')
+                  .padding({ left: 6, right: 6, top: 1, bottom: 1 })
+                  .borderRadius(6)
+                  .margin({ left: 6 });
+              }
             }
             .alignItems(VerticalAlign.Center);
 
@@ -322,6 +366,102 @@ export struct NetworkPage {
     this.loadNetworkData();
   }
 
+  // ==================== 实时速率采样 ====================
+
+  private startRateSampler(): void {
+    if (this.rateTimer >= 0) return;
+    this.rateTimer = setInterval(() => {
+      if (this.pageVisible) {
+        this.sampleRates();
+      }
+    }, RATE_SAMPLE_MS);
+  }
+
+  private stopRateSampler(): void {
+    if (this.rateTimer >= 0) {
+      clearInterval(this.rateTimer);
+      this.rateTimer = -1;
+    }
+  }
+
+  private findSample(device: string): RateSample | null {
+    for (let i = 0; i < this.prevSamples.length; i++) {
+      if (this.prevSamples[i].device === device) {
+        return this.prevSamples[i];
+      }
+    }
+    return null;
+  }
+
+  private findStats(list: NetDeviceStats[], device: string): NetDeviceStats | null {
+    for (let i = 0; i < list.length; i++) {
+      if (list[i].device === device) {
+        return list[i];
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 采一次样并算出实时速率。
+   *
+   * 速率 = (本次字节数 − 上次字节数) / 间隔秒数。
+   * 只需要 1 个 ubus 请求：luci-rpc.getNetworkDevices 一次就返回所有网卡的 stats。
+   */
+  private async sampleRates(): Promise<void> {
+    if (!this.client.isLoggedIn() || this.interfaces.length === 0) {
+      return;
+    }
+
+    const stats: NetDeviceStats[] = await this.client.getAllDeviceStats();
+    if (stats.length === 0) {
+      return;
+    }
+
+    const now: number = Date.now();
+    const dt: number = this.prevStamp > 0 ? (now - this.prevStamp) / 1000 : 0;
+
+    const nextSamples: RateSample[] = [];
+    let changed: boolean = false;
+
+    for (let i = 0; i < this.interfaces.length; i++) {
+      const it: NetworkInterface = this.interfaces[i];
+      const cur: NetDeviceStats | null = this.findStats(stats, it.l3Device);
+      if (cur === null) {
+        continue;
+      }
+
+      const s: RateSample = new RateSample();
+      s.device = it.l3Device;
+      s.rx = cur.rxBytes;
+      s.tx = cur.txBytes;
+      nextSamples.push(s);
+
+      const prev: RateSample | null = this.findSample(it.l3Device);
+      // dt 太小算出来的速率抖动很大，跳过
+      if (prev !== null && dt > 0.5) {
+        let drx: number = cur.rxBytes - prev.rx;
+        let dtx: number = cur.txBytes - prev.tx;
+        // 计数器回绕 / 路由器重启时 delta 会变负数，钳到 0
+        if (drx < 0) drx = 0;
+        if (dtx < 0) dtx = 0;
+        it.rxRate = drx / dt;
+        it.txRate = dtx / dt;
+        it.rateReady = true;
+        changed = true;
+      }
+    }
+
+    this.prevSamples = nextSamples;
+    this.prevStamp = now;
+
+    // 对象是原地改的，ArkUI 检测不到，所以要换一份新数组引用并 bump 版本号
+    if (changed) {
+      this.interfaces = this.interfaces.slice();
+      this.dataVersion = this.dataVersion + 1;
+    }
+  }
+
   // ==================== 工具方法 ====================
 
   /** 把一个或多个地址格式化成 192.168.2.1/24 形式 */
@@ -376,6 +516,15 @@ export struct NetworkPage {
     if (n < 10000) return String(n);
     if (n < 100000000) return (n / 10000).toFixed(1) + ' 万';
     return (n / 100000000).toFixed(2) + ' 亿';
+  }
+
+  /** 字节/秒 → 人看的速率 */
+  private formatRate(bytesPerSec: number): string {
+    if (bytesPerSec < 1) return '0 B/s';
+    if (bytesPerSec < 1024) return bytesPerSec.toFixed(0) + ' B/s';
+    if (bytesPerSec < 1048576) return (bytesPerSec / 1024).toFixed(1) + ' KB/s';
+    if (bytesPerSec < 1073741824) return (bytesPerSec / 1048576).toFixed(2) + ' MB/s';
+    return (bytesPerSec / 1073741824).toFixed(2) + ' GB/s';
   }
 
   /** 全零 MAC（loopback 等虚拟设备）不显示 */

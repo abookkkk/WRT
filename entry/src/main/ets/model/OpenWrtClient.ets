@@ -19,6 +19,7 @@ import type {
   NetworkDump,
   NetworkInterface,
   NetAddress,
+  NetDeviceStats,
   DhcpLease,
   LuciDhcpLease,
   LuciDhcpLeaseResponse,
@@ -361,6 +362,38 @@ export class OpenWrtClient {
     return '';
   }
 
+  /**
+   * 一次拿到**所有**网卡的收发字节数（用于算实时速率）。
+   *
+   * 用 `luci-rpc.getNetworkDevices`：一次请求就返回全部网卡（实测 8 个）的 stats，
+   * 比逐个调 `network.device status` 便宜得多，适合秒级轮询。
+   */
+  async getAllDeviceStats(): Promise<NetDeviceStats[]> {
+    const out: NetDeviceStats[] = [];
+    const r: UbusResult<Record<string, Object>> = await this.ubusCallAuth<Record<string, Object>>(
+      'luci-rpc', 'getNetworkDevices', json('{}')
+    );
+    if (!r.success || !r.data) {
+      return out;
+    }
+
+    const names: string[] = Object.keys(r.data);
+    for (let i = 0; i < names.length; i++) {
+      const dev: Record<string, Object> = r.data[names[i]] as Record<string, Object>;
+      const st: Record<string, Object> | undefined = dev['stats'] as Record<string, Object>;
+      if (!st) {
+        continue;
+      }
+      const item: NetDeviceStats = {
+        device: names[i],
+        rxBytes: this.toNumber(st['rx_bytes']),
+        txBytes: this.toNumber(st['tx_bytes'])
+      };
+      out.push(item);
+    }
+    return out;
+  }
+
   /** 把 ubus 的原始接口对象（字段名带连字符）映射成好用的模型 */
   private mapInterface(raw: Object): NetworkInterface {
     const r: Record<string, Object> = raw as Record<string, Object>;
@@ -392,7 +425,10 @@ export class OpenWrtClient {
       carrier: false,
       statsAvailable: false,
       showDeviceStats: false,
-      deviceOwner: ''
+      deviceOwner: '',
+      rateReady: false,
+      rxRate: 0,
+      txRate: 0
     };
 
     // DHCP 拿到的服务器 / 租期在 data 里

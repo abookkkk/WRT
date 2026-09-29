@@ -147,11 +147,27 @@ export interface NetworkInterface {
   showDeviceStats: boolean;
   /** 若设备统计已在别的接口上展示，这里给出那个接口名（用于提示） */
   deviceOwner: string;
+
+  // ---- 实时速率（由页面定时采样算出，字节/秒）----
+  /** 是否已能算出速率（需要至少两次采样） */
+  rateReady: boolean;
+  rxRate: number;
+  txRate: number;
 }
 
 /** network.interface dump 的原始返回。字段名带连字符，只用于映射。 */
 export interface NetworkDump {
   interface: Object[];
+}
+
+/**
+ * 单个网卡的收发计数（来自 luci-rpc.getNetworkDevices 的 stats 字段）。
+ * 用数组而不是 Record，避免 ArkTS 里 `record[key]` 取不到时的 undefined 类型问题。
+ */
+export interface NetDeviceStats {
+  device: string;
+  rxBytes: number;
+  txBytes: number;
 }
 
 // ===================== DHCP 租约 =====================
