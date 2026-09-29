@@ -394,6 +394,37 @@ export class OpenWrtClient {
     return out;
   }
 
+  /**
+   * 找出「出口」接口对应的三层设备名（用来算上网速率）。
+   *
+   * 优先取名为 `wan` 的接口；没有的话退回第一个带默认网关的接口。
+   * 只发 1 个请求（dump），不需要逐个查 device status。
+   */
+  async findUplinkDevice(): Promise<string> {
+    const dump: UbusResult<NetworkDump> =
+      await this.ubusCallAuth<NetworkDump>('network.interface', 'dump', json('{}'));
+    if (!dump.success || !dump.data) {
+      return '';
+    }
+
+    const list: Object[] = dump.data.interface || [];
+    let fallback: string = '';
+
+    for (let i = 0; i < list.length; i++) {
+      const r: Record<string, Object> = list[i] as Record<string, Object>;
+      const name: string = String(r['interface'] || '');
+      const dev: string = String(r['l3_device'] || r['device'] || '');
+
+      if (name === 'wan') {
+        return dev;
+      }
+      if (fallback.length === 0 && this.findGateway(r['route']).length > 0) {
+        fallback = dev;
+      }
+    }
+    return fallback;
+  }
+
   /** 把 ubus 的原始接口对象（字段名带连字符）映射成好用的模型 */
   private mapInterface(raw: Object): NetworkInterface {
     const r: Record<string, Object> = raw as Record<string, Object>;
