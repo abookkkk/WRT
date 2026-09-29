@@ -235,6 +235,52 @@ export interface HostHint {
 }
 
 /**
+ * Clash 的一个策略组（Selector / URLTest / Fallback）。
+ * 只有 Selector 类型可以手动切换节点。
+ */
+export interface ClashGroup {
+  name: string;
+  /** Selector / URLTest / Fallback / LoadBalance */
+  type: string;
+  /** 当前选中的节点名 */
+  now: string;
+  /** 组内成员节点名 */
+  members: string[];
+  /** 各成员最近一次测速延迟（毫秒），-1 表示未知；与 members 一一对应 */
+  memberDelays: number[];
+  /** 是否能手动切换（只有 Selector 可以） */
+  switchable: boolean;
+}
+
+/**
+ * OpenClash 概览（汇总 Clash 外部控制 API 的 /version /configs /proxies /connections）
+ */
+export interface ClashOverview {
+  version: string;
+  /** rule / global / direct */
+  mode: string;
+  logLevel: string;
+  allowLan: boolean;
+  ipv6: boolean;
+  /** 形如 "7890 / 7893 / 9090" */
+  ports: string;
+  /** 节点总数 */
+  proxyCount: number;
+  /** 形如 "Hysteria2 21 · Vless 19" */
+  typeSummary: string;
+  /** 活动连接数 */
+  activeConnections: number;
+  /** 累计下载（字节） */
+  downloadTotal: number;
+  /** 累计上传（字节） */
+  uploadTotal: number;
+  /** Clash 自身占用内存（字节） */
+  memory: number;
+  /** 策略组列表 */
+  groups: ClashGroup[];
+}
+
+/**
  * OpenClash 的 uci 配置摘要（config 段）。
  *
  * OpenClash 没有自己的 ubus 对象，配置全在 uci 里，靠

@@ -28,6 +28,8 @@ import type {
   ServiceInstance,
   ServiceStatus,
   OpenClashSettings,
+  ClashGroup,
+  ClashOverview,
   WirelessRadio,
   WifiClient,
   IwinfoListResponse,
@@ -39,6 +41,18 @@ import type {
 const ANONYMOUS_SESSION: string = '00000000000000000000000000000000';
 const DEFAULT_TIMEOUT: number = 10000;
 let requestIdCounter: number = 0;
+
+/** 统计节点类型用的小结构（ArkTS 里 Record 取不到 key 时类型是 undefined，不方便） */
+class ClashTypeCount {
+  type: string = '';
+  count: number = 0;
+}
+
+/** 节点名 → 最近延迟（毫秒） */
+class ClashDelay {
+  name: string = '';
+  delay: number = -1;
+}
 
 /**
  * 构建 JSON 对象（ArkTS 安全方式）
@@ -148,6 +162,273 @@ export class OpenWrtClient {
       mixedPort: String(values['mixed_port'] || '')
     };
     return settings;
+  }
+
+  // ======================== Clash 外部控制 API ========================
+
+  /**
+   * 调 Clash 外部控制 API（端口默认 9090）。
+   * 必须带 `Authorization: Bearer <dashboard_password>`，否则一律 401。
+   *
+   * ⚠️ 注意：HarmonyOS 的 `http.RequestMethod` **没有 PATCH**，
+   * 而 mihomo 的 `/configs` 只认 PATCH 做局部更新
+   * （实测 PUT 返回 204 但字段根本没变）。所以**切换运行模式不要走这个 API**，
+   * 还是得用 uci set + 重启服务。节点切换用的是 PUT /proxies/{组名}，那个没问题。
+   */
+  private clashRequest(url: string, secret: string, method: http.RequestMethod, body: string): Promise<HttpResult> {
+    return new Promise<HttpResult>((resolve) => {
+      const client: http.HttpRequest = http.createHttp();
+
+      const headers: Record<string, string> = {};
+      headers['Content-Type'] = 'application/json';
+      if (secret.length > 0) {
+        headers['Authorization'] = `Bearer ${secret}`;
+      }
+
+      let options: http.HttpRequestOptions;
+      if (body.length > 0) {
+        options = {
+          method: method,
+          header: headers,
+          extraData: body,
+          connectTimeout: 6000,
+          readTimeout: 15000
+        };
+      } else {
+        options = {
+          method: method,
+          header: headers,
+          connectTimeout: 6000,
+          readTimeout: 15000
+        };
+      }
+
+      client.request(url, options, (err: BusinessError | null, data: http.HttpResponse) => {
+        client.destroy();
+        if (err) {
+          resolve({ success: false, error: '请求失败: ' + err.message });
+          return;
+        }
+        const code: number = data.responseCode;
+        const text: string = data.result ? String(data.result) : '';
+        if (code >= 200 && code < 300) {
+          resolve({ success: true, data: text, statusCode: code });
+        } else {
+          resolve({ success: false, data: text, error: 'HTTP ' + code, statusCode: code });
+        }
+      });
+    });
+  }
+
+  /**
+   * 汇总 OpenClash 概览。
+   *
+   * 一共发 4 个请求：/version、/configs、/proxies、/connections。
+   * 连不上控制 API（如密钥不对）时返回 null，页面据此降级显示。
+   */
+  async getClashOverview(baseUrl: string, secret: string): Promise<ClashOverview | null> {
+    const overview: ClashOverview = {
+      version: '--',
+      mode: '--',
+      logLevel: '--',
+      allowLan: false,
+      ipv6: false,
+      ports: '--',
+      proxyCount: 0,
+      typeSummary: '--',
+      activeConnections: 0,
+      downloadTotal: 0,
+      uploadTotal: 0,
+      memory: 0,
+      groups: []
+    };
+
+    // ---- /version ----
+    const versionResp: HttpResult =
+      await this.clashRequest(baseUrl + '/version', secret, http.RequestMethod.GET, '');
+    if (!versionResp.success) {
+      return null;
+    }
+    try {
+      const vo: Record<string, Object> = JSON.parse(versionResp.data || '{}') as Record<string, Object>;
+      overview.version = String(vo['version'] || '--');
+    } catch (e) {
+      console.warn('[Clash] 解析 /version 失败: ' + JSON.stringify(e));
+    }
+
+    // ---- /configs ----
+    const configResp: HttpResult =
+      await this.clashRequest(baseUrl + '/configs', secret, http.RequestMethod.GET, '');
+    if (configResp.success && configResp.data) {
+      try {
+        const c: Record<string, Object> = JSON.parse(configResp.data) as Record<string, Object>;
+        overview.mode = String(c['mode'] || '--');
+        overview.logLevel = String(c['log-level'] || '--');
+        overview.allowLan = c['allow-lan'] === true;
+        overview.ipv6 = c['ipv6'] === true;
+
+        const parts: string[] = [];
+        const httpPort: string = String(c['port'] || '');
+        const mixedPort: string = String(c['mixed-port'] || '');
+        const socksPort: string = String(c['socks-port'] || '');
+        if (httpPort.length > 0) {
+          parts.push('HTTP ' + httpPort);
+        }
+        if (mixedPort.length > 0) {
+          parts.push('混合 ' + mixedPort);
+        }
+        if (socksPort.length > 0) {
+          parts.push('SOCKS ' + socksPort);
+        }
+        overview.ports = parts.length > 0 ? parts.join(' · ') : '--';
+      } catch (e) {
+        console.warn('[Clash] 解析 /configs 失败: ' + JSON.stringify(e));
+      }
+    }
+
+    // ---- /proxies ----
+    const proxyResp: HttpResult =
+      await this.clashRequest(baseUrl + '/proxies', secret, http.RequestMethod.GET, '');
+    if (proxyResp.success && proxyResp.data) {
+      try {
+        const root: Record<string, Object> = JSON.parse(proxyResp.data) as Record<string, Object>;
+        const proxies: Record<string, Object> | undefined = root['proxies'] as Record<string, Object>;
+        if (proxies) {
+          const names: string[] = Object.keys(proxies);
+
+          // 第一遍：把每个节点的最近延迟记下来（策略组的成员要显示延迟）
+          const delays: ClashDelay[] = [];
+          for (let i = 0; i < names.length; i++) {
+            const p: Record<string, Object> = proxies[names[i]] as Record<string, Object>;
+            const d: ClashDelay = new ClashDelay();
+            d.name = names[i];
+            d.delay = this.extractDelay(p);
+            delays.push(d);
+          }
+
+          // 第二遍：分拣策略组 / 统计节点类型
+          const counts: ClashTypeCount[] = [];
+          const groups: ClashGroup[] = [];
+
+          for (let i = 0; i < names.length; i++) {
+            const name: string = names[i];
+            const p: Record<string, Object> = proxies[name] as Record<string, Object>;
+            const type: string = String(p['type'] || '');
+
+            // 策略组单独收集，不计入节点统计
+            if (type === 'Selector' || type === 'URLTest' || type === 'Fallback' || type === 'LoadBalance') {
+              if (name === 'GLOBAL') {
+                continue; // 内建全局选择器，规则模式下没有意义
+              }
+              const members: string[] = this.toStringList(p['all']);
+              const memberDelays: number[] = [];
+              for (let m = 0; m < members.length; m++) {
+                memberDelays.push(this.findDelay(delays, members[m]));
+              }
+              const g: ClashGroup = {
+                name: name,
+                type: type,
+                now: String(p['now'] || ''),
+                members: members,
+                memberDelays: memberDelays,
+                switchable: type === 'Selector'
+              };
+              groups.push(g);
+              continue;
+            }
+
+            // 内建项不算节点
+            if (type === 'Direct' || type === 'Reject' || type === 'RejectDrop' ||
+                type === 'Pass' || type === 'Compatible' || type === 'PassRule') {
+              continue;
+            }
+
+            let found: boolean = false;
+            for (let k = 0; k < counts.length; k++) {
+              if (counts[k].type === type) {
+                counts[k].count = counts[k].count + 1;
+                found = true;
+              }
+            }
+            if (!found) {
+              const tc: ClashTypeCount = new ClashTypeCount();
+              tc.type = type;
+              tc.count = 1;
+              counts.push(tc);
+            }
+          }
+
+          counts.sort((a: ClashTypeCount, b: ClashTypeCount) => b.count - a.count);
+
+          let total: number = 0;
+          const summary: string[] = [];
+          for (let i = 0; i < counts.length; i++) {
+            total = total + counts[i].count;
+            if (i < 3) {
+              summary.push(counts[i].type + ' ' + counts[i].count);
+            }
+          }
+
+          overview.proxyCount = total;
+          overview.typeSummary = summary.length > 0 ? summary.join(' · ') : '--';
+          overview.groups = groups;
+        }
+      } catch (e) {
+        console.warn('[Clash] 解析 /proxies 失败: ' + JSON.stringify(e));
+      }
+    }
+
+    // ---- /connections ----
+    const connResp: HttpResult =
+      await this.clashRequest(baseUrl + '/connections', secret, http.RequestMethod.GET, '');
+    if (connResp.success && connResp.data) {
+      try {
+        const c: Record<string, Object> = JSON.parse(connResp.data) as Record<string, Object>;
+        overview.downloadTotal = this.toNumber(c['downloadTotal']);
+        overview.uploadTotal = this.toNumber(c['uploadTotal']);
+        overview.memory = this.toNumber(c['memory']);
+        const list: Object[] | undefined = c['connections'] as Object[];
+        overview.activeConnections = list ? list.length : 0;
+      } catch (e) {
+        console.warn('[Clash] 解析 /connections 失败: ' + JSON.stringify(e));
+      }
+    }
+
+    return overview;
+  }
+
+  /** 从节点的 history 里取最近一次延迟（毫秒），取不到返回 -1 */
+  private extractDelay(proxy: Record<string, Object>): number {
+    const history: Object[] | undefined = proxy['history'] as Object[];
+    if (!history || history.length === 0) {
+      return -1;
+    }
+    const last: Record<string, Object> = history[history.length - 1] as Record<string, Object>;
+    const d: number = this.toNumber(last['delay']);
+    return d > 0 ? d : -1;
+  }
+
+  /** 在延迟表里查某个节点 */
+  private findDelay(table: ClashDelay[], name: string): number {
+    for (let i = 0; i < table.length; i++) {
+      if (table[i].name === name) {
+        return table[i].delay;
+      }
+    }
+    return -1;
+  }
+
+  /**
+   * 切换某个策略组的节点（只有 Selector 类型的组能切）。
+   *
+   * 实测：`PUT /proxies/{URL编码的组名}` + body `{"name":"<节点名>"}`
+   * 成功返回 HTTP 204。
+   */
+  async switchClashNode(baseUrl: string, secret: string, group: string, node: string): Promise<boolean> {
+    const url: string = `${baseUrl}/proxies/${encodeURIComponent(group)}`;
+    const body: string = `{"name":${JSON.stringify(node)}}`;
+    const r: HttpResult = await this.clashRequest(url, secret, http.RequestMethod.PUT, body);
+    return r.success;
   }
 
   /**
