@@ -153,7 +153,60 @@ OpenClash **没有自己的 ubus 对象**，走这三条路：
 
 ---
 
-## 六、ArkTS / ArkUI 硬性规则（踩过的坑）
+## 六、无线（WiFi）管理规则（实测）
+
+### 读数据
+
+| 目的 | 调用 |
+|---|---|
+| **射频开关 / SSID / 密码 / 隐藏 / 接口名 / 信道 / 功率**（首选，一次拿全） | `luci-rpc.getWirelessDevices` |
+| 已连接客户端 | `iwinfo.assoclist` + `{"device":"<ifname>"}` |
+| 可用信道 | `iwinfo.freqlist` + `{"device":"<ifname>"}` |
+| WiFi 详情 | `iwinfo.info` + `{"device":"<ifname>"}` |
+| 周边扫描 | `iwinfo.scan` + `{"device":"<ifname>"}` |
+
+- `ifname` 从 `getWirelessDevices()` 的 `result.<radio>.interfaces[0].ifname` 取，例如 `phy1-ap0`。
+- **不要**用 `hostapd.<ifname>.get_clients` 取客户端列表 —— ACL 没放行，会 `-32002`。
+- `assoclist` / `scan` / `freqlist` 返回的都是 `{"results":[...]}`，要取 `.results`。
+- `getWirelessDevices` 返回的每个 radio 有：`up` / `disabled` / `config`（band、channel）/ `interfaces[]`（含 `ifname`、`section`、`config.ssid/key/hidden/encryption`）/ `iwinfo`（channel、txpower、hwmodes_text）。
+
+### 写数据 / 应用
+
+```
+uci set wireless <section> <option> <value>     ← uci.set
+uci commit wireless                              ← uci.commit
+rc.init {"name":"network","action":"reload"}     ← 真正生效
+```
+
+| 要改什么 | section | option | 值 |
+|---|---|---|---|
+| 射频开关 | `radio0` / `radio1` | `disabled` | `0` 开 / `1` 关 |
+| WiFi 名称 | `default_radio0` / `default_radio1` | `ssid` | 字符串 |
+| WiFi 密码 | 同上 | `key` | WPA 至少 8 位 |
+| 隐藏 SSID | 同上 | `hidden` | `1` 隐藏 / `0` 显示 |
+
+**实测**：`rc.init network reload` **不会踢掉已连接的客户端** —— 射频保持 up、SSID 不变、客户端仍在线。
+
+### 断开客户端
+
+```
+hostapd.<ifname>.del_client  {"addr":"<MAC>","deauth":true,"ban_time":0}
+```
+
+- 对象名必须带接口名，如 `hostapd.phy1-ap0`；写成 `hostapd` 会 `-32002`。
+- `ban_time` 单位是**毫秒**，`0` = 只断开不拉黑，客户端可以立即重连。
+
+### ⚠️ 信道扫描的坑
+
+当 5G 跑在 **HE160**（占用跨 DFS 的宽信道，比如 36–64 中心 50）时，MT7981 驱动会**拒绝后台扫描**，
+`iwinfo.scan` 返回空数组；在路由器上直接跑 `iw scan` 也是 0 个 BSS，报
+`Netlink error while awaiting scan results: No event received`。
+
+**正确处理**：扫到空数组时不要显示空白列表，要提示用户"可能是 160MHz 宽信道导致的，把带宽降到 80MHz 通常就能扫到"。
+
+---
+
+## 七、ArkTS / ArkUI 硬性规则（踩过的坑）
 
 ### 1. 明文 HTTP 必须挂 metadata，否则所有 http:// 请求被系统拒绝
 
@@ -211,7 +264,7 @@ clashInfoRows() {
 
 ---
 
-## 七、构建 / 部署备忘
+## 八、构建 / 部署备忘
 
 - 命令行编译（DevEco 没开时可用）：
   ```powershell

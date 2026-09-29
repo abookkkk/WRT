@@ -25,6 +25,11 @@ import type {
   ServiceInstance,
   ServiceStatus,
   OpenClashSettings,
+  WirelessRadio,
+  WifiClient,
+  IwinfoListResponse,
+  IwinfoScanResult,
+  IwinfoFreq,
   HttpResult
 } from './OpenWrtModels';
 
@@ -175,6 +180,114 @@ export class OpenWrtClient {
       'uci', 'commit', json('{"config":"openclash"}')
     );
     return commitResult.success;
+  }
+
+  // ======================== 无线（WiFi） ========================
+
+  /**
+   * 读取全部无线设备状态：射频开关、SSID、是否隐藏、密钥、接口名、信道、发射功率。
+   * 一次调用就能拿全，比解析 uci 方便得多，推荐做 WiFi 页的首选数据源。
+   */
+  async getWirelessDevices(): Promise<UbusResult<Record<string, WirelessRadio>>> {
+    return this.ubusCallAuth<Record<string, WirelessRadio>>(
+      'luci-rpc', 'getWirelessDevices', json('{}')
+    );
+  }
+
+  /**
+   * 读取某个 AP 接口上已连接的客户端。
+   *
+   * 注意：不要用 hostapd.<iface>.get_clients —— ACL 没放行会返回 -32002，
+   * 必须用 iwinfo.assoclist（在白名单里）。
+   *
+   * @param ifname 接口名，从 getWirelessDevices() 的 interfaces[].ifname 取，如 phy1-ap0
+   */
+  async getWifiClients(ifname: string): Promise<UbusResult<WifiClient[]>> {
+    const r: UbusResult<IwinfoListResponse<WifiClient>> =
+      await this.ubusCallAuth<IwinfoListResponse<WifiClient>>(
+        'iwinfo', 'assoclist', json(`{"device":"${ifname}"}`)
+      );
+    if (!r.success || !r.data) {
+      return { success: false, code: r.code, data: null, error: r.error || '获取客户端失败' };
+    }
+    return { success: true, code: 0, data: r.data.results || [] };
+  }
+
+  /**
+   * 扫描周边 WiFi。
+   *
+   * 实测坑：当 5G 跑在 HE160（占用跨 DFS 的宽信道）时，MT7981 驱动会拒绝后台扫描，
+   * 返回空数组 —— 在路由器上直接跑 iw scan 也是 0 个 BSS，报
+   * "Netlink error while awaiting scan results"。
+   * 所以页面必须能优雅处理"扫不到"的情况，并提示用户可能是带宽太宽导致的。
+   */
+  async scanWifi(ifname: string): Promise<UbusResult<IwinfoScanResult[]>> {
+    const r: UbusResult<IwinfoListResponse<IwinfoScanResult>> =
+      await this.ubusCallAuth<IwinfoListResponse<IwinfoScanResult>>(
+        'iwinfo', 'scan', json(`{"device":"${ifname}"}`)
+      );
+    if (!r.success || !r.data) {
+      return { success: false, code: r.code, data: null, error: r.error || '扫描失败' };
+    }
+    return { success: true, code: 0, data: r.data.results || [] };
+  }
+
+  /** 该射频支持的信道列表（iwinfo.freqlist） */
+  async getWifiChannels(ifname: string): Promise<UbusResult<IwinfoFreq[]>> {
+    const r: UbusResult<IwinfoListResponse<IwinfoFreq>> =
+      await this.ubusCallAuth<IwinfoListResponse<IwinfoFreq>>(
+        'iwinfo', 'freqlist', json(`{"device":"${ifname}"}`)
+      );
+    if (!r.success || !r.data) {
+      return { success: false, code: r.code, data: null, error: r.error || '获取信道列表失败' };
+    }
+    return { success: true, code: 0, data: r.data.results || [] };
+  }
+
+  /**
+   * 写一个 wireless 配置项（只写到内存，还没 commit）。
+   * 改完所有项后要调 commitWifi() + applyWifi() 才真正生效。
+   *
+   * @param section uci section 名，射频用 radio0/radio1，AP 用 default_radio0/default_radio1
+   */
+  async setWifiOption(section: string, option: string, value: string): Promise<boolean> {
+    const r: UbusResult<Object> = await this.ubusCallAuth<Object>(
+      'uci', 'set',
+      json(`{"config":"wireless","section":"${section}","values":{"${option}":"${value}"}}`)
+    );
+    return r.success;
+  }
+
+  /** 提交 wireless 配置变更 */
+  async commitWifi(): Promise<boolean> {
+    const r: UbusResult<Object> = await this.ubusCallAuth<Object>(
+      'uci', 'commit', json('{"config":"wireless"}')
+    );
+    return r.success;
+  }
+
+  /**
+   * 应用无线配置（让改动真正生效）。
+   * 实测：rc.init + network reload 可用，而且不会踢掉已经连着的客户端。
+   */
+  async applyWifi(): Promise<boolean> {
+    const r: UbusResult<Object> = await this.ubusCallAuth<Object>(
+      'rc', 'init', json('{"name":"network","action":"reload"}')
+    );
+    return r.success;
+  }
+
+  /**
+   * 踢掉一个无线客户端。
+   *
+   * 对象名必须是 hostapd.<ifname>，例如 hostapd.phy1-ap0。
+   * @param banTimeMs 拉黑时长（毫秒），传 0 表示只断开不拉黑，客户端可以立刻重连
+   */
+  async kickWifiClient(ifname: string, mac: string, banTimeMs: number = 0): Promise<UbusResult<Object>> {
+    return this.ubusCallAuth<Object>(
+      `hostapd.${ifname}`, 'del_client',
+      json(`{"addr":"${mac}","deauth":true,"ban_time":${banTimeMs}}`)
+    );
   }
 
   async getSystemBoard(): Promise<UbusResult<SystemBoard>> {

@@ -1,8 +1,8 @@
 /**
  * 主页（Tab 导航容器）
- * 
- * 使用 Tabs 组件包含四个标签页：
- * 仪表盘、网络接口、在线设备、OpenClash
+ *
+ * 使用 Tabs 组件包含五个标签页：
+ * 仪表盘、网络接口、无线网络、在线设备、OpenClash
  */
 
 import { promptAction } from '@kit.ArkUI';
@@ -11,6 +11,7 @@ import { SessionStore } from '../model/SessionStore';
 import { GlobalContext } from '../model/GlobalContext';
 import { DashboardPage } from './DashboardPage';
 import { NetworkPage } from './NetworkPage';
+import { WifiPage } from './WifiPage';
 import { DevicesPage } from './DevicesPage';
 import { OpenClashPage } from './OpenClashPage';
 
@@ -54,13 +55,19 @@ export struct HomePage {
         }
         .tabBar('网络接口')
 
-        // Tab 3：在线设备
+        // Tab 3：无线网络
+        TabContent() {
+          WifiPage({ client: this.client })
+        }
+        .tabBar('无线网络')
+
+        // Tab 4：在线设备
         TabContent() {
           DevicesPage({ client: this.client })
         }
         .tabBar('在线设备')
 
-        // Tab 4：OpenClash
+        // Tab 5：OpenClash
         TabContent() {
           OpenClashPage({ client: this.client })
         }
@@ -68,6 +75,8 @@ export struct HomePage {
       }
       .layoutWeight(1)
       .width('100%')
+      // 5 个标签在手机宽度下放不下，改成可横向滚动的标签栏
+      .barMode(BarMode.Scrollable)
       .onChange((index: number) => {
         this.currentIndex = index;
       })

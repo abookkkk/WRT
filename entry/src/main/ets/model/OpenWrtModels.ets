@@ -192,6 +192,109 @@ export interface OpenClashSettings {
   mixedPort: string;
 }
 
+// ===================== 无线（WiFi）相关 =====================
+
+/**
+ * iwinfo 信息（iwinfo.info / luci-rpc.getWirelessDevices 里的 iwinfo 字段）
+ */
+export interface IwinfoData {
+  phy?: string;
+  ssid?: string;
+  bssid?: string;
+  country?: string;
+  mode?: string;
+  channel?: number;
+  center_chan1?: number;
+  frequency?: number;
+  txpower?: number;
+  quality?: number;
+  quality_max?: number;
+  signal?: number;
+  noise?: number;
+  bitrate?: number;
+  hwmodes_text?: string;
+  htmodes?: string[] | string;
+  hardware?: Record<string, Object>;
+  encryption?: Record<string, Object>;
+}
+
+/** 无线接口（一个 AP）的配置 */
+export interface WirelessIfaceConfig {
+  device?: string;
+  network?: string;
+  mode?: string;
+  ssid?: string;
+  key?: string;
+  encryption?: string;
+  hidden?: boolean;
+  disabled?: boolean;
+}
+
+/** 无线接口（一个 AP） */
+export interface WirelessIface {
+  section?: string;
+  ifname?: string;
+  config?: WirelessIfaceConfig;
+  iwinfo?: IwinfoData;
+}
+
+/** 一个射频（radio0 / radio1） */
+export interface WirelessRadio {
+  up?: boolean;
+  disabled?: boolean;
+  autostart?: boolean;
+  config?: Record<string, Object>;
+  interfaces?: WirelessIface[];
+  iwinfo?: IwinfoData;
+}
+
+/** 已连接的无线客户端（iwinfo.assoclist 里的一项） */
+export interface WifiClientRate {
+  bytes?: number;
+  packets?: number;
+  rate?: number;
+  mhz?: number;
+  mcs?: number;
+  nss?: number;
+}
+
+export interface WifiClient {
+  mac?: string;
+  signal?: number;
+  signal_avg?: number;
+  noise?: number;
+  inactive?: number;
+  connected_time?: number;
+  authorized?: boolean;
+  authenticated?: boolean;
+  rx?: WifiClientRate;
+  tx?: WifiClientRate;
+}
+
+/** iwinfo.assoclist / iwinfo.scan / iwinfo.freqlist 的统一包装 */
+export interface IwinfoListResponse<T> {
+  results?: T[];
+}
+
+/** iwinfo.scan 扫到的一个邻居 AP */
+export interface IwinfoScanResult {
+  ssid?: string;
+  bssid?: string;
+  channel?: number;
+  signal?: number;
+  quality?: number;
+  quality_max?: number;
+  mode?: string;
+  encryption?: Record<string, Object>;
+}
+
+/** iwinfo.freqlist 里的一个信道 */
+export interface IwinfoFreq {
+  channel?: number;
+  mhz?: number;
+  restricted?: boolean;
+}
+
 // ===================== 服务管理 =====================
 
 /** 服务实例 */

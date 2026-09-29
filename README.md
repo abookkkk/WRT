@@ -11,6 +11,7 @@
 - **登录与会话持久化** —— 用 `@ohos.data.preferences` 保存地址与 session，下次打开自动恢复登录
 - **仪表盘** —— 设备型号、OpenWrt 版本、内核版本、主机名、运行时长、CPU 负载（1/5/15 分钟）、内存占用、在线设备数；30 秒静默自动刷新
 - **网络接口** —— 各接口的协议、设备、连接状态
+- **无线网络** —— 每个射频的开关（2.4G/5G 独立）、WiFi 名称、密码、隐藏 SSID 开关；已连接设备列表（信号强度、收发流量、在线时长）与一键断开；周边 WiFi 扫描
 - **在线设备** —— DHCP 租约列表（主机名、MAC、IP、剩余租期）
 - **OpenClash** —— 运行状态、内核版本、运行模式、HTTP 端口、是否允许局域网；一键重启
 
@@ -109,6 +110,7 @@ entry/src/main/
         ├── HomePage.ets             # Tabs 容器（4 个 Tab）
         ├── DashboardPage.ets        # 仪表盘
         ├── NetworkPage.ets          # 网络接口
+        ├── WifiPage.ets             # 无线网络（射频开关 / SSID / 密码 / 隐藏 / 客户端踢出 / 扫描）
         ├── DevicesPage.ets          # 在线设备
         └── OpenClashPage.ets        # OpenClash
 ```
@@ -159,6 +161,7 @@ clashInfoRows() { Column() { Row() { Text('版本'); Text(this.version) } } }
 
 - [ ] `bundleName` 还是默认的 `com.example.myapplication`，正式发布前需要改
 - [ ] 网络接口页的收发流量暂时显示 `0 B`（`network.interface.dump` 默认不返回流量统计）
-- [ ] 暂未做 WiFi 管理页（`uci` + `iwinfo` 已具备能力：开关射频、改 SSID/密码/隐藏、信道扫描、踢设备）
+- [ ] 无线页暂未做**信道选择下拉**（`iwinfo.freqlist` 已能取到信道列表）
+- [ ] 无线页暂未做**发射功率 / 频宽 (HT mode) 调整**
 - [ ] 暂未做 OpenClash 节点切换 / 订阅管理
 - [ ] 暂未做路由器重启按钮（`system.reboot` 已可用）
