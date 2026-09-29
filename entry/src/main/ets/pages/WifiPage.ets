@@ -53,9 +53,14 @@ class RadioItem {
   hidden: boolean = false;
   encryption: string = '';
   configChannel: string = '';
+  configHtMode: string = '';
   liveChannel: number = 0;
   txpower: number = 0;
   hwmodes: string = '';
+  /** 该射频可用的信道（优先取 iwinfo.freqlist，射频关闭时用频段默认值兜底） */
+  channels: number[] = [];
+  /** 该射频支持的频宽（来自 iwinfo.htmodes） */
+  htModes: string[] = [];
   clients: ClientItem[] = [];
 }
 
@@ -126,12 +131,54 @@ export struct WifiPage {
                 if (radio.enabled) {
                   // --- 实时状态 ---
                   this.infoLine('当前信道', radio.liveChannel > 0 ? String(radio.liveChannel) : '--');
-                  this.infoLine('配置信道', radio.configChannel);
                   this.infoLine('发射功率', radio.txpower > 0 ? (radio.txpower + ' dBm') : '--');
                   this.infoLine('支持模式', radio.hwmodes.length > 0 ? radio.hwmodes : '--');
                   this.infoLine('已连设备', String(radio.clients.length) + ' 台');
 
                   Divider().margin({ top: 8, bottom: 12 });
+
+                  // --- 信道选择 ---
+                  Row() {
+                    Text('信道').fontSize(14).fontColor(COLOR_SECONDARY).layoutWeight(1);
+                    Select(this.channelOptions(radio))
+                      .selected(this.channelIndex(radio))
+                      .value(radio.configChannel)
+                      .font({ size: 14 })
+                      .enabled(!this.busy)
+                      .onSelect((index: number, value?: string) => {
+                        if (value !== undefined) {
+                          radio.configChannel = value;
+                        }
+                      });
+                  }
+                  .width('100%').margin({ bottom: 8 });
+
+                  // --- 频宽选择 ---
+                  Row() {
+                    Text('频宽').fontSize(14).fontColor(COLOR_SECONDARY).layoutWeight(1);
+                    Select(this.htModeOptions(radio))
+                      .selected(this.htModeIndex(radio))
+                      .value(radio.configHtMode.length > 0 ? radio.configHtMode : '未设置')
+                      .font({ size: 14 })
+                      .enabled(!this.busy)
+                      .onSelect((index: number, value?: string) => {
+                        if (value !== undefined) {
+                          radio.configHtMode = value;
+                        }
+                      });
+                  }
+                  .width('100%').margin({ bottom: 8 });
+
+                  Text('信道 / 频宽改完后，点下面的「保存并应用」才会生效')
+                    .fontSize(11).fontColor(COLOR_TERTIARY).width('100%');
+
+                  if (radio.configHtMode.indexOf('160') >= 0) {
+                    Text('⚠️ 160MHz 会占用跨 DFS 的宽信道，MT7981 驱动会拒绝后台扫描（信道扫描会扫不到东西）')
+                      .fontSize(11).fontColor(COLOR_ORANGE).width('100%')
+                      .lineHeight(16).margin({ top: 4 });
+                  }
+
+                  Divider().margin({ top: 12, bottom: 12 });
 
                   // --- SSID ---
                   Text('WiFi 名称 (SSID)').fontSize(13).fontColor(COLOR_SECONDARY).width('100%');
@@ -336,6 +383,7 @@ export struct WifiPage {
         if (cfg) {
           item.bandLabel = this.bandLabel(String(cfg['band'] || ''));
           item.configChannel = String(cfg['channel'] || 'auto');
+          item.configHtMode = String(cfg['htmode'] || '');
         } else {
           item.bandLabel = name;
           item.configChannel = 'auto';
@@ -346,6 +394,7 @@ export struct WifiPage {
           item.liveChannel = live.channel || 0;
           item.txpower = live.txpower || 0;
           item.hwmodes = live.hwmodes_text || '';
+          item.htModes = this.toStringArray(live.htmodes);
         }
 
         const ifaces: WirelessIface[] = radio.interfaces || [];
@@ -367,7 +416,24 @@ export struct WifiPage {
             if (cr.success && cr.data) {
               item.clients = this.toClientItems(cr.data);
             }
+
+            const fr = await this.client.getWifiChannels(item.ifname);
+            if (fr.success && fr.data) {
+              const chs: number[] = [];
+              for (let k = 0; k < fr.data.length; k++) {
+                const ch: number = fr.data[k].channel || 0;
+                if (ch > 0) {
+                  chs.push(ch);
+                }
+              }
+              item.channels = chs;
+            }
           }
+        }
+
+        // 射频关着的时候没有 AP 接口，iwinfo.freqlist 用不了，用频段默认信道兜底
+        if (item.channels.length === 0) {
+          item.channels = this.defaultChannelsFor(item.bandLabel);
         }
 
         items.push(item);
@@ -432,7 +498,7 @@ export struct WifiPage {
     }
   }
 
-  /** 保存 SSID / 密码 并应用 */
+  /** 保存 SSID / 密码 / 隐藏 / 信道 / 频宽 并应用 */
   private async applyEdits(radio: RadioItem): Promise<void> {
     if (radio.ssid.length === 0) {
       this.toast('WiFi 名称不能为空');
@@ -451,6 +517,13 @@ export struct WifiPage {
       }
       if (ok) {
         ok = await this.client.setWifiOption(radio.ifaceSection, 'hidden', radio.hidden ? '1' : '0');
+      }
+      // 信道和频宽是射频级配置，section 用 radio0 / radio1
+      if (ok && radio.configChannel.length > 0) {
+        ok = await this.client.setWifiOption(radio.radioName, 'channel', radio.configChannel);
+      }
+      if (ok && radio.configHtMode.length > 0) {
+        ok = await this.client.setWifiOption(radio.radioName, 'htmode', radio.configHtMode);
       }
       if (!ok) {
         this.toast('写入配置失败');
@@ -548,6 +621,92 @@ export struct WifiPage {
     return new Promise<void>((resolve) => {
       setTimeout(() => { resolve(); }, ms);
     });
+  }
+
+  /** 信道下拉选项：auto + 可用信道 */
+  private channelOptions(radio: RadioItem): SelectOption[] {
+    const opts: SelectOption[] = [];
+    const autoOpt: SelectOption = { value: 'auto' };
+    opts.push(autoOpt);
+    for (let i = 0; i < radio.channels.length; i++) {
+      const o: SelectOption = { value: String(radio.channels[i]) };
+      opts.push(o);
+    }
+    return opts;
+  }
+
+  /** 当前配置信道在选项里的下标 */
+  private channelIndex(radio: RadioItem): number {
+    if (radio.configChannel === 'auto' || radio.configChannel.length === 0) {
+      return 0;
+    }
+    const want: number = parseInt(radio.configChannel) || 0;
+    for (let i = 0; i < radio.channels.length; i++) {
+      if (radio.channels[i] === want) {
+        return i + 1;
+      }
+    }
+    return 0;
+  }
+
+  /** 频宽下拉选项 */
+  private htModeOptions(radio: RadioItem): SelectOption[] {
+    const opts: SelectOption[] = [];
+    for (let i = 0; i < radio.htModes.length; i++) {
+      const o: SelectOption = { value: radio.htModes[i] };
+      opts.push(o);
+    }
+    return opts;
+  }
+
+  /** 当前频宽在选项里的下标 */
+  private htModeIndex(radio: RadioItem): number {
+    for (let i = 0; i < radio.htModes.length; i++) {
+      if (radio.htModes[i] === radio.configHtMode) {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  /**
+   * 射频关闭时拿不到 iwinfo.freqlist（没有 AP 接口），用频段标准信道兜底，
+   * 这样用户可以在开启射频前先把信道设好。
+   */
+  private defaultChannelsFor(bandLabel: string): number[] {
+    if (bandLabel === '2.4G') {
+      return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+    }
+    if (bandLabel === '5G') {
+      return [36, 40, 44, 48, 52, 56, 60, 64, 100, 104, 108, 112, 116, 120,
+              124, 128, 132, 136, 140, 144, 149, 153, 157, 161, 165];
+    }
+    return [];
+  }
+
+  /**
+   * iwinfo 的 htmodes 有时是数组、有时是空格分隔的字符串，统一成数组。
+   */
+  private toStringArray(v: string[] | string | undefined): string[] {
+    if (v === undefined || v === null) {
+      return [];
+    }
+    if (Array.isArray(v)) {
+      return v as string[];
+    }
+    const s: string = v as string;
+    if (s.length === 0) {
+      return [];
+    }
+    const parts: string[] = s.split(' ');
+    const out: string[] = [];
+    for (let i = 0; i < parts.length; i++) {
+      const p: string = parts[i].trim();
+      if (p.length > 0) {
+        out.push(p);
+      }
+    }
+    return out;
   }
 
   private bandLabel(band: string): string {
