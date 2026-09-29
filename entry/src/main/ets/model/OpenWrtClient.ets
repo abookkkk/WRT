@@ -17,6 +17,8 @@ import type {
   SystemBoard,
   SystemInfo,
   NetworkDump,
+  NetworkInterface,
+  NetAddress,
   DhcpLease,
   LuciDhcpLease,
   LuciDhcpLeaseResponse,
@@ -300,6 +302,182 @@ export class OpenWrtClient {
 
   async getNetworkDump(): Promise<UbusResult<NetworkDump>> {
     return this.ubusCallAuth<NetworkDump>('network.interface', 'dump', json('{}'));
+  }
+
+  /**
+   * 读取全部网络接口，并把流量统计一起补上（推荐用这个）。
+   *
+   * 为什么不能只用 dump：
+   *   `network.interface dump` 的 `data` 字段是空的，**不含流量统计**；
+   *   流量的 `statistics.rx_bytes / tx_bytes` 在 `network.device status` 里。
+   * 所以 N 个接口会发 N+1 个请求。
+   */
+  async getNetworkInterfaces(): Promise<UbusResult<NetworkInterface[]>> {
+    const dump: UbusResult<NetworkDump> =
+      await this.ubusCallAuth<NetworkDump>('network.interface', 'dump', json('{}'));
+    if (!dump.success || !dump.data) {
+      return { success: false, code: dump.code, data: null, error: dump.error || '获取接口失败' };
+    }
+
+    const rawList: Object[] = dump.data.interface || [];
+    const out: NetworkInterface[] = [];
+    // 记录已经展示过设备统计的 l3_device，避免 wan / wan6 重复显示同一份流量
+    const seenDevices: string[] = [];
+
+    for (let i = 0; i < rawList.length; i++) {
+      const item: NetworkInterface = this.mapInterface(rawList[i]);
+
+      if (item.l3Device.length > 0) {
+        const st: UbusResult<Record<string, Object>> =
+          await this.ubusCallAuth<Record<string, Object>>(
+            'network.device', 'status', json(`{"name":"${item.l3Device}"}`)
+          );
+        if (st.success && st.data) {
+          this.applyDeviceStatus(item, st.data);
+        }
+      }
+
+      // 同一个物理设备只展示一次设备级统计
+      item.showDeviceStats = item.statsAvailable && seenDevices.indexOf(item.l3Device) < 0;
+      if (item.showDeviceStats) {
+        seenDevices.push(item.l3Device);
+      } else {
+        item.deviceOwner = this.findDisplayOwner(out, item.l3Device);
+      }
+
+      out.push(item);
+    }
+
+    return { success: true, code: 0, data: out };
+  }
+
+  /** 找出已经展示过该设备统计的接口名（用于提示"见 WAN"） */
+  private findDisplayOwner(list: NetworkInterface[], l3Device: string): string {
+    for (let i = 0; i < list.length; i++) {
+      if (list[i].l3Device === l3Device && list[i].showDeviceStats) {
+        return list[i].name.toUpperCase();
+      }
+    }
+    return '';
+  }
+
+  /** 把 ubus 的原始接口对象（字段名带连字符）映射成好用的模型 */
+  private mapInterface(raw: Object): NetworkInterface {
+    const r: Record<string, Object> = raw as Record<string, Object>;
+
+    const item: NetworkInterface = {
+      name: String(r['interface'] || ''),
+      proto: String(r['proto'] || ''),
+      device: String(r['device'] || ''),
+      l3Device: String(r['l3_device'] || r['device'] || ''),
+      up: r['up'] === true,
+      uptime: this.toNumber(r['uptime']),
+      ipv4: this.toAddresses(r['ipv4-address']),
+      ipv6: this.toAddresses(r['ipv6-address']),
+      gateway: this.findGateway(r['route']),
+      dns: this.toStringList(r['dns-server']),
+      dhcpServer: '',
+      leaseTime: 0,
+      rxBytes: 0,
+      txBytes: 0,
+      rxPackets: 0,
+      txPackets: 0,
+      rxErrors: 0,
+      txErrors: 0,
+      mtu: 0,
+      speed: '',
+      mac: '',
+      devtype: '',
+      bridgeMembers: [],
+      carrier: false,
+      statsAvailable: false,
+      showDeviceStats: false,
+      deviceOwner: ''
+    };
+
+    // DHCP 拿到的服务器 / 租期在 data 里
+    const data: Record<string, Object> | undefined = r['data'] as Record<string, Object>;
+    if (data) {
+      item.dhcpServer = String(data['dhcpserver'] || '');
+      item.leaseTime = this.toNumber(data['leasetime']);
+    }
+    return item;
+  }
+
+  /** 把 network.device status 的内容补到接口上（流量、速率、MTU、桥接成员） */
+  private applyDeviceStatus(item: NetworkInterface, d: Record<string, Object>): void {
+    item.statsAvailable = true;
+    item.mtu = this.toNumber(d['mtu']);
+    item.speed = String(d['speed'] || '');
+    item.mac = String(d['macaddr'] || '');
+    item.devtype = String(d['devtype'] || '');
+    item.carrier = d['carrier'] === true;
+    item.bridgeMembers = this.toStringList(d['bridge-members']);
+
+    const stats: Record<string, Object> | undefined = d['statistics'] as Record<string, Object>;
+    if (stats) {
+      item.rxBytes = this.toNumber(stats['rx_bytes']);
+      item.txBytes = this.toNumber(stats['tx_bytes']);
+      item.rxPackets = this.toNumber(stats['rx_packets']);
+      item.txPackets = this.toNumber(stats['tx_packets']);
+      item.rxErrors = this.toNumber(stats['rx_errors']);
+      item.txErrors = this.toNumber(stats['tx_errors']);
+    }
+  }
+
+  /** Object -> number（ubus 里数字可能是 number 也可能是字符串） */
+  private toNumber(v: Object | undefined): number {
+    if (v === undefined || v === null) {
+      return 0;
+    }
+    const n: number = parseInt(String(v));
+    return isNaN(n) ? 0 : n;
+  }
+
+  /** Object -> string[] */
+  private toStringList(v: Object | undefined): string[] {
+    const out: string[] = [];
+    if (v === undefined || v === null || !Array.isArray(v)) {
+      return out;
+    }
+    const arr: Object[] = v as Object[];
+    for (let i = 0; i < arr.length; i++) {
+      out.push(String(arr[i]));
+    }
+    return out;
+  }
+
+  /** Object -> NetAddress[]（ipv4-address / ipv6-address 的形状） */
+  private toAddresses(v: Object | undefined): NetAddress[] {
+    const out: NetAddress[] = [];
+    if (v === undefined || v === null || !Array.isArray(v)) {
+      return out;
+    }
+    const arr: Object[] = v as Object[];
+    for (let i = 0; i < arr.length; i++) {
+      const o: Record<string, Object> = arr[i] as Record<string, Object>;
+      const a: NetAddress = {
+        address: String(o['address'] || ''),
+        mask: this.toNumber(o['mask'])
+      };
+      out.push(a);
+    }
+    return out;
+  }
+
+  /** 从 route 列表里找默认网关（target 0.0.0.0 且 mask 0） */
+  private findGateway(v: Object | undefined): string {
+    if (v === undefined || v === null || !Array.isArray(v)) {
+      return '';
+    }
+    const arr: Object[] = v as Object[];
+    for (let i = 0; i < arr.length; i++) {
+      const o: Record<string, Object> = arr[i] as Record<string, Object>;
+      if (String(o['target'] || '') === '0.0.0.0' && this.toNumber(o['mask']) === 0) {
+        return String(o['nexthop'] || '');
+      }
+    }
+    return '';
   }
 
   /**

@@ -99,6 +99,30 @@ OpenWrt 的 rpcd 有 ACL。**很多看起来理所当然的方法实际会被拒
 | 匿名 session 调任何业务方法 | `-32002 Access denied` | 必须先 `session.login` |
 | `rc.init` + `action=running/enabled/status` | ubus code **2（参数非法）** | 查状态用 `rc.list` |
 
+### 网络接口 / 流量的数据来源（实测，很容易搞错）
+
+| 想要什么 | 该调哪个 |
+|---|---|
+| 逻辑接口（lan / wan / wan6 / loopback）的 IP、网关、DNS、运行时长 | `network.interface dump` |
+| **设备流量统计**（rx/tx bytes、包数、错误包） | `network.device status` + `{"name":"<l3_device>"}` |
+| 设备属性（MTU、链路速率、MAC、网桥成员、carrier） | 同上 |
+| 所有网卡的 IP + 统计（另一条路） | `luci-rpc.getNetworkDevices` |
+
+**⚠️ 两个坑：**
+
+1. **`network.interface dump` 里没有流量。** 它的 `data` 字段对静态/桥接接口是空的，
+   `rx_bytes` / `tx_bytes` 只存在于 `network.device status` 返回的 `statistics` 里。
+   所以 N 个接口要发 N+1 个请求。
+
+2. **dump 的字段名带连字符**：`ipv4-address`（数组 `[{address, mask}]`）、
+   `dns-server`（数组）、`l3_device`、`ipv6-address`、`route`（`[{target, mask, nexthop}]`）。
+   ArkTS 里不能当标识符用，**必须先映射成 camelCase 模型**再给 UI 用。
+   网关要从 `route` 里找 `target === '0.0.0.0' && mask === 0` 那条的 `nexthop`。
+
+3. **wan 和 wan6 的 `l3_device` 都是 `wan`**，如果每张卡都显示设备统计，
+   会出现两份一模一样的流量和 MTU。要按 `l3_device` 去重，只让第一个显示，
+   其余的给一句"见 XXX 卡片"的提示。
+
 ---
 
 ## 四、关键数据结构的真实形状（实测，容易写错）

@@ -76,35 +76,82 @@ export interface SystemInfo {
 
 // ===================== 网络接口 =====================
 
-/** 接口流量统计数据 */
-export interface TrafficData {
-  rx_bytes?: number;
-  tx_bytes?: number;
-  rx_packets?: number;
-  tx_packets?: number;
-  rx_errors?: number;
-  tx_errors?: number;
+/** 接口上的一个 IP 地址 */
+export interface NetAddress {
+  address: string;
+  /** IPv4 是掩码位数（如 24），IPv6 是前缀长度 */
+  mask: number;
 }
 
-/** 网络接口信息 */
+/** 路由表项 */
+export interface NetRoute {
+  target: string;
+  mask: number;
+  nexthop: string;
+}
+
+/**
+ * 网络接口（已从 ubus 原始返回映射成好用的形态）。
+ *
+ * ubus 原始字段名带连字符（`ipv4-address` / `dns-server` / `l3_device`），
+ * 在 ArkTS 里不好直接用，所以由 OpenWrtClient.mapInterface() 转换一次。
+ *
+ * 注意：`network.interface dump` **不包含流量统计**，
+ * 流量要另外调 `network.device status {"name":"<l3_device>"}` 拿 statistics。
+ */
 export interface NetworkInterface {
-  interface: string;
+  /** 逻辑接口名：lan / loopback / wan / wan6 */
+  name: string;
   proto: string;
-  up: boolean;
+  /** 配置里的设备 */
   device: string;
-  ipaddr?: string;
-  netmask?: string;
-  gateway?: string;
-  dns?: string[];
-  ip6addr?: string[];
-  dns6?: string[];
-  metric?: string;
-  data?: TrafficData;
+  /** 三层设备，查流量统计要用它 */
+  l3Device: string;
+  up: boolean;
+  /** 已运行秒数 */
+  uptime: number;
+  ipv4: NetAddress[];
+  ipv6: NetAddress[];
+  /** 默认网关（从 route 里 target=0.0.0.0 那条取） */
+  gateway: string;
+  dns: string[];
+  /** DHCP 拿到的服务器地址 */
+  dhcpServer: string;
+  /** DHCP 租期（秒） */
+  leaseTime: number;
+
+  // ---- 以下来自 network.device status ----
+  rxBytes: number;
+  txBytes: number;
+  rxPackets: number;
+  txPackets: number;
+  rxErrors: number;
+  txErrors: number;
+  mtu: number;
+  /** 链路速率，如 1000F；虚拟/无线设备可能为空 */
+  speed: string;
+  mac: string;
+  devtype: string;
+  /** 网桥成员设备 */
+  bridgeMembers: string[];
+  carrier: boolean;
+  /** 设备状态是否取到了 */
+  statsAvailable: boolean;
+  /**
+   * 是否在本页展示设备级统计（流量 / MTU / 速率 / MAC / 桥接成员）。
+   *
+   * wan 和 wan6 这类逻辑接口会共用同一个物理设备（l3_device 都是 wan），
+   * 如果每个卡片都显示，就会看到两份一模一样的流量。
+   * 所以只让第一个用到该设备的接口显示，其余置 false 并提示"见 xxx"。
+   */
+  showDeviceStats: boolean;
+  /** 若设备统计已在别的接口上展示，这里给出那个接口名（用于提示） */
+  deviceOwner: string;
 }
 
-/** network.interface dump 返回 */
+/** network.interface dump 的原始返回。字段名带连字符，只用于映射。 */
 export interface NetworkDump {
-  interface: NetworkInterface[];  // 注意：OpenWrt API 返回的字段名是 interface (单数)
+  interface: Object[];
 }
 
 // ===================== DHCP 租约 =====================
