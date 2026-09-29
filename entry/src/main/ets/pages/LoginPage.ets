@@ -186,6 +186,11 @@ export struct LoginPage {
               TextInput({ placeholder: '密码', text: this.password })
                 .layoutWeight(1)
                 .type(this.showPassword ? InputType.Normal : InputType.Password)
+                // ⚠️ 必须关掉 TextInput 自带的密码可见性图标：
+                // InputType.Password 默认会在输入框末尾画一个自己的眼睛图标（颜色跟随文字色），
+                // 而下面又加了一个灰色的 SymbolGlyph 眼睛，实测会并排显示成两个图标（截图里是两个闭眼）。
+                // 关掉之后只剩自定义图标，密码显隐完全由 this.showPassword 驱动，状态不会不同步。
+                .showPasswordIcon(false)
                 .backgroundColor(Color.Transparent)
                 .padding(0)
                 .fontSize(F_BODY)
@@ -248,7 +253,10 @@ export struct LoginPage {
 
           Text('数据通过路由器自带的 ubus 接口获取，不经过第三方服务器')
             .fontSize(F_TINY)
-            .fontColor('#99FFFFFF')
+            // 这行在卡片下方，背景已经是渐变尾部的近白色（#F5F6F8）。
+            // 原来用 #99FFFFFF（60% 白），实测对比只有 2~8 级，等于看不见；
+            // 白色系颜色只适用于顶部的深蓝区域。
+            .fontColor(C_TEXT_3)
             .textAlign(TextAlign.Center)
             .width('100%')
             .margin({ top: SP_XL, bottom: SP_XL });
