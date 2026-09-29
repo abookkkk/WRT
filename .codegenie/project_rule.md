@@ -305,6 +305,37 @@ private refreshData(): void {
 仪表盘一次刷新要发 3 个 ubus 请求（`system.board` + `system.info` + `luci-rpc.getDHCPLeases`），
 写成 1 秒等于把 256MB 的路由器当压力测试机。当前设为 `30000`（30 秒）。
 
+### 6. 不要同时用 `width('100%')` 和左右 `margin`
+
+`width('100%')` 已经等于父容器**全宽**，再加左右 margin 会让组件**向右溢出**父容器，
+右边的内容被屏幕裁掉。实测症状：设备卡片右侧的 `●` 状态点和「X小时X分后过期」被切掉。
+
+**错误写法**：
+```typescript
+ListItem() {
+  Column() { ... }
+    .width('100%')
+    .margin({ left: 16, right: 16 })   // ← 右侧溢出，右边内容被裁
+}
+```
+
+**正确写法**：左右留白放到**父容器**的 `padding` 上，卡片只留纵向 margin：
+```typescript
+List() { ... }
+  .width('100%')
+  .padding({ left: 16, right: 16 })    // ← 内容区被正确内缩
+// 卡片：.width('100%').margin({ bottom: 10 })
+```
+
+> 判断方法：dump 布局看 bounds。父容器宽 1316 时，卡片应该是 `[56, ...][1260, ...]`；
+> 如果右边界是 1316（屏幕最右）就是溢出了。
+
+### 7. `Column` 的 `alignItems` 默认是 `Center`
+
+要让子元素左对齐，必须显式写 `.alignItems(HorizontalAlign.Start)`。
+否则主机名、MAC 地址这类文本会在列内居中（实测设备卡片就中招了：
+`HCL` 显示在 `[727,534]` 而不是 `[294,534]`）。
+
 ---
 
 ## 八、构建 / 部署备忘

@@ -70,7 +70,9 @@ export struct DevicesPage {
                           .fontSize(13).fontColor(COLOR_SECONDARY)
                           .fontFamily('monospace').margin({ top: 2 });
                       }
-                      .layoutWeight(1);
+                      .layoutWeight(1)
+                      // Column 的 alignItems 默认是 Center，不写的话主机名/MAC 会居中
+                      .alignItems(HorizontalAlign.Start);
 
                       // 状态指示灯用文本替代
                       Text(this.isLeaseActive(device) ? '●' : '○')
@@ -89,7 +91,7 @@ export struct DevicesPage {
                   }
                   .width('100%').padding(16).backgroundColor(COLOR_CARD_BG)
                   .borderRadius(18).shadow(ShadowStyle.OUTER_DEFAULT_SM)
-                  .margin({ left: 16, right: 16, bottom: 10 });
+                  .margin({ bottom: 10 });
                 }
               }, (device: DhcpLease, index?: number) => {
                 return device.mac + device.ip;
@@ -97,6 +99,10 @@ export struct DevicesPage {
             }
             .width('100%')
             .height('100%')
+            // 左右留白放在 List 的 padding 上。
+            // 不能给卡片写 width('100%') + margin({left,right})：width 已经是父容器全宽，
+            // 再加左右 margin 会让卡片向右溢出屏幕，右边的内容（状态点、到期时间）被裁掉。
+            .padding({ left: 16, right: 16 })
             .edgeEffect(EdgeEffect.Spring);
           }
           .layoutWeight(1)
