@@ -2,15 +2,15 @@
   "string": [
     {
       "name": "module_desc",
-      "value": "module description"
+      "value": "OpenWrt 路由器管理"
     },
     {
       "name": "EntryAbility_desc",
-      "value": "description"
+      "value": "OpenWrt 路由器管理客户端"
     },
     {
       "name": "EntryAbility_label",
-      "value": "label"
+      "value": "OpenWrt 管理"
     },
     {
       "name": "permission_internet_reason",

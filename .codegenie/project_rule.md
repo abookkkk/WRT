@@ -38,7 +38,7 @@
 | 目标设备 | 手机为主，兼容平板 |
 | SDK | HarmonyOS 6.1.1 (API 24)，targetSdkVersion / compatibleSdkVersion 都是 6.1.1(24) |
 | 工程路径 | E:\HarmonyNext\Code\OpenWrt |
-| 工程状态 | 已有完整工程，4 个 Tab 页：仪表盘 / 网络接口 / 在线设备 / OpenClash |
+| 工程状态 | 已有完整工程，5 个 Tab 页：仪表盘 / 网络接口 / 无线 / 在线设备 / OpenClash；应用名「OpenWrt 管理」（分层图标，源自 OpenWrt logo） |
 | bundleName | com.example.myapplication |
 
 ---

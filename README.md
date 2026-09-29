@@ -1,5 +1,7 @@
 # WRT · OpenWrt 鸿蒙管理 App
 
+> 应用名（桌面显示）：**OpenWrt 管理**　·　图标：OpenWrt logo（分层图标，见下文「界面」）
+
 用 **HarmonyOS（ArkTS + ArkUI）** 写的 OpenWrt 路由器管理客户端。直接调用路由器自带的 **ubus JSON-RPC** 接口（`/ubus`），不依赖 LuCI 网页、不需要装 `luci-mod-rpc`。
 
 > 开发验证环境：小米路由器 AX3000T（MediaTek MT7981）刷 OpenWrt 25.12.5
@@ -13,7 +15,7 @@
 - **网络接口** —— 每个接口的协议、运行时长、IPv4/IPv6、网关、DNS、DHCP 服务器/租期、MTU、链路速率、MAC、桥接成员；累计流量与包数，以及**每 3 秒刷新的实时速率**（页面不可见时自动暂停采样）
 - **无线网络** —— 每个射频的开关（2.4G/5G 独立）、WiFi 名称、密码、隐藏 SSID；**信道与频宽（HT mode）选择**；已连接设备列表（信号强度、收发流量、在线时长）与一键断开；周边 WiFi 扫描
 - **在线设备** —— DHCP 租约列表（主机名、MAC、IP、剩余租期）
-- **OpenClash** —— 运行状态、内核版本、运行模式、HTTP 端口、是否允许局域网；一键重启
+- **OpenClash** —— 运行状态、内核版本、运行模式、HTTP 端口、是否允许局域网；**策略组与节点切换**（含各节点延迟）；一键重启
 
 ---
 
@@ -105,6 +107,7 @@ HarmonyOS **默认禁止明文 HTTP**。想连局域网里的 `http://192.168.x.
 | **登录页** | 深蓝渐变头部 + 圆形半透明徽章 + 玻璃表单卡片；键盘「前往」键通过 `onSubmit` 直接提交登录 |
 | **趋势曲线** | `Canvas` + `CanvasRenderingContext2D` 命令式绘制（能拿画布真实宽高自适应屏幕，也方便数据更新时直接重绘）；**双 Y 轴**——上下行各自按窗口内峰值缩放，避免一边大一边被压成直线 |
 | **统一设计令牌** | `entry/src/main/ets/common/Theme.ets` 集中管理颜色 / 圆角 / 间距 / 字号 |
+| **应用图标** | 分层图标 `layered_image`：`foreground.png` 1024×1024（图标内容限制在中央 640 安全区内，圆角 / 圆形遮罩都不会切到图形）+ `background.png` 浅蓝→白渐变 + 启动图 `startIcon.png` 512×512 |
 
 > 💡 **实时速率怎么做的**：用 `luci-rpc.getNetworkDevices` —— **一次请求**就返回全部网卡的
 > `stats.rx_bytes / tx_bytes`（实测 8 个），比逐个调 `network.device status` 便宜得多。
@@ -136,7 +139,7 @@ entry/src/main/
     └── pages/
         ├── Index.ets                # 入口：未登录→LoginPage，已登录→HomePage
         ├── LoginPage.ets            # 登录页
-        ├── HomePage.ets             # Tabs 容器（4 个 Tab）
+        ├── HomePage.ets             # Tabs 容器（5 个 Tab）
         ├── DashboardPage.ets        # 仪表盘
         ├── NetworkPage.ets          # 网络接口
         ├── WifiPage.ets             # 无线网络（射频开关 / SSID / 密码 / 隐藏 / 客户端踢出 / 扫描）
@@ -188,7 +191,23 @@ clashInfoRows() { Column() { Row() { Text('版本'); Text(this.version) } } }
 
 ## 已知限制 / TODO
 
-- [ ] `bundleName` 还是默认的 `com.example.myapplication`，正式发布前需要改
-- [ ] 无线页暂未做**发射功率调整**（`iwinfo.txpowerlist` 可枚举可选功率）
-- [ ] 暂未做 OpenClash 节点切换 / 订阅管理
+### 已完成
+
+- [x] **应用图标与应用名** —— 图标取自 OpenWrt logo（`foreground.png` 1024×1024、内容限制在中央 640 安全区；`background.png` 浅蓝→白渐变；启动图 `startIcon.png` 512×512），应用名统一为「OpenWrt 管理」
+- [x] **OpenClash 策略组与节点切换** —— 读 `/proxies` 列出 Selector / URLTest / Fallback 策略组及成员延迟，用 `PUT /proxies/{组名}` 切节点
+
+### 待办
+
+- [ ] **无线页的「多 SSID」缺口**（对「多 WiFi / 一 WiFi 一住宅 IP」方案影响最大的一条）：
+      `luci-rpc.getWirelessDevices` 返回的 `interfaces[]` 目前只取了第一个（`ifaces[0]`），
+      因此一个射频上挂的第 2 个及以后的 SSID 既看不到也改不了，已连接客户端也只统计第一个 AP；
+      另外还缺「SSID → network / zone / 出口 IP」的对照展示
+- [ ] **会话过期没有恢复路径**：路由器 session 300 秒超时后所有请求返回 `-32002`，
+      页面只会显示各种「获取失败 / 写入失败」；密码没有持久化、无法自动重登，
+      需要统一检测 `-32002` 并退回登录页
+- [ ] 无线页暂未做**发射功率调整**（`iwinfo.txpowerlist` 可枚举可选功率，目前只读不写）
+- [ ] 暂未做 OpenClash **订阅管理**（策略组 / 节点切换已支持）
 - [ ] 暂未做路由器重启按钮（`system.reboot` 已可用）
+- [ ] `bundleName` 还是默认的 `com.example.myapplication`，正式发布前需要改
+- [ ] `OpenWrtClient` 用字符串拼接构造 JSON（`session.login`、`setWifiOption`）：密码 / SSID 里含 `"` 或 `\` 时请求体会坏掉，应改用 `JSON.stringify`
+- [ ] 设备页 / 网络页的下拉刷新会把整页置为 loading，列表连同 `Refresh` 一起被卸载重建，体验退化成「整页转圈」；仪表盘静默刷新失败时也会整体切到错误页、丢掉已有数据
