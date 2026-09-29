@@ -1,20 +1,23 @@
 /**
  * 登录页面
- * 
- * 输入路由器地址、用户名、密码登录 OpenWrt。
- * 登录成功后保存 Session 到本地，下次自动恢复。
+ *
+ * 视觉：整屏渐变背景 + 玻璃拟态表单卡片 + 系统符号图标（SymbolGlyph）
+ * 逻辑：输入路由器地址 / 用户名 / 密码，登录成功后把 Session 存到本地，下次自动恢复。
  */
 
 import { promptAction } from '@kit.ArkUI';
 import { OpenWrtClient } from '../model/OpenWrtClient';
 import { SessionStore } from '../model/SessionStore';
 import { GlobalContext } from '../model/GlobalContext';
+import {
+  C_PRIMARY, C_ACCENT, C_TEXT_1, C_TEXT_2, C_TEXT_3, C_TEXT_ON_PRIMARY,
+  C_CARD, C_FILL, C_DANGER,
+  F_HERO, F_BODY, F_CAPTION, F_TINY,
+  R_CARD, R_INPUT, R_BTN, SP_S, SP_M, SP_L, SP_XL, ICON_M
+} from '../common/Theme';
 
-/** 颜色常量 */
-const COLOR_PRIMARY: ResourceColor = '#0078D4';
-const COLOR_SECONDARY: ResourceColor = '#666666';
-const COLOR_CARD_BG: ResourceColor = '#FFFFFF';
-const COLOR_PAGE_BG: ResourceColor = '#F5F5F5';
+/** 字段行统一样式用的高度 */
+const FIELD_HEIGHT: number = 50;
 
 @Component
 export struct LoginPage {
@@ -52,90 +55,214 @@ export struct LoginPage {
   }
 
   build() {
-    Column() {
-      // ===== 顶部区域 =====
-      Column() {
-        Text('🔧')
-          .fontSize(48);
-        Text('OpenWrt 管理')
-          .fontSize(22)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(Color.White)
-          .margin({ top: 8 });
-      }
-      .width('100%')
-      .height('25%')
-      .justifyContent(FlexAlign.Center)
-      .backgroundColor(COLOR_PRIMARY)
+    Stack({ alignContent: Alignment.TopStart }) {
+      // ===== 整屏渐变背景（沉浸式，延伸到状态栏后面）=====
+      Column()
+        .width('100%')
+        .height('100%')
+        .linearGradient({
+          angle: 170,
+          colors: [
+            [C_PRIMARY, 0.00],
+            ['#3D7BFF', 0.28],
+            ['#F0F4FF', 0.62],
+            ['#F5F6F8', 1.00]
+          ]
+        })
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
 
-      // ===== 登录表单卡片 =====
-      Column() {
-        Text('连接到路由器后台')
-          .fontSize(14)
-          .fontColor(COLOR_SECONDARY)
-          .margin({ top: 8, bottom: 24 });
+      Scroll() {
+        Column() {
+          // ===== 头部 Logo 区 =====
+          Column() {
+            Stack() {
+              Circle().width(88).height(88).fill('#33FFFFFF');
+              SymbolGlyph($r('sys.symbol.wifi'))
+                .fontSize(46)
+                .fontColor([Color.White])
+                .renderingStrategy(SymbolRenderingStrategy.SINGLE);
+            }
+            .width(88)
+            .height(88);
 
-        // 路由器地址 + 端口
-        Row() {
-          TextInput({ placeholder: '路由器 IP 地址', text: this.host })
-            .layoutWeight(1)
-            .onChange((v: string) => { this.host = v.trim(); });
+            Text('OpenWrt 管理')
+              .fontSize(F_HERO)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(C_TEXT_ON_PRIMARY)
+              .margin({ top: SP_M });
 
-          TextInput({ placeholder: '端口', text: this.port })
-            .width(72)
-            .type(InputType.Number)
-            .onChange((v: string) => { this.port = v.trim(); });
-        }
-        .margin({ bottom: 12 });
+            Text('路由器控制台')
+              .fontSize(F_CAPTION)
+              .fontColor('#CCFFFFFF')
+              .margin({ top: 2 });
+          }
+          .width('100%')
+          .padding({ top: 36, bottom: 24 })
+          .alignItems(HorizontalAlign.Center);
 
-        // HTTPS 开关
-        Row() {
-          Text('使用 HTTPS').fontSize(14);
-          Toggle({ type: ToggleType.Switch, isOn: this.useHttps })
-            .onChange((v: boolean) => { this.useHttps = v; });
+          // ===== 表单卡片（玻璃拟态）=====
+          Column() {
+            Text('连接到路由器后台')
+              .fontSize(F_BODY)
+              .fontColor(C_TEXT_2)
+              .width('100%')
+              .margin({ bottom: SP_XL });
+
+            // --- 地址 + 端口 ---
+            Row() {
+              SymbolGlyph($r('sys.symbol.house'))
+                .fontSize(18)
+                .fontColor([C_TEXT_3])
+                .margin({ right: SP_S });
+
+              TextInput({ placeholder: '路由器 IP 地址', text: this.host })
+                .layoutWeight(1)
+                .backgroundColor(Color.Transparent)
+                .padding(0)
+                .fontSize(F_BODY)
+                .placeholderFont({ size: F_BODY })
+                .onChange((v: string) => { this.host = v.trim(); });
+
+              TextInput({ placeholder: '端口', text: this.port })
+                .width(64)
+                .type(InputType.Number)
+                .backgroundColor(Color.Transparent)
+                .padding(0)
+                .fontSize(F_BODY)
+                .textAlign(TextAlign.End)
+                .onChange((v: string) => { this.port = v.trim(); });
+            }
+            .width('100%')
+            .height(FIELD_HEIGHT)
+            .padding({ left: SP_M, right: SP_M })
+            .backgroundColor(C_FILL)
+            .borderRadius(R_INPUT)
+            .margin({ bottom: SP_M });
+
+            // --- HTTPS 开关 ---
+            Row() {
+              SymbolGlyph($r('sys.symbol.lock'))
+                .fontSize(18)
+                .fontColor([C_TEXT_3])
+                .margin({ right: SP_S });
+              Text('使用 HTTPS').fontSize(F_BODY).fontColor(C_TEXT_1).layoutWeight(1);
+              Toggle({ type: ToggleType.Switch, isOn: this.useHttps })
+                .onChange((v: boolean) => { this.useHttps = v; });
+            }
+            .width('100%')
+            .height(FIELD_HEIGHT)
+            .padding({ left: SP_M, right: SP_S })
+            .backgroundColor(C_FILL)
+            .borderRadius(R_INPUT)
+            .margin({ bottom: SP_M });
+
+            // --- 用户名 ---
+            Row() {
+              SymbolGlyph($r('sys.symbol.person'))
+                .fontSize(18)
+                .fontColor([C_TEXT_3])
+                .margin({ right: SP_S });
+              TextInput({ placeholder: '用户名', text: this.username })
+                .layoutWeight(1)
+                .backgroundColor(Color.Transparent)
+                .padding(0)
+                .fontSize(F_BODY)
+                .placeholderFont({ size: F_BODY })
+                .onChange((v: string) => { this.username = v.trim(); });
+            }
+            .width('100%')
+            .height(FIELD_HEIGHT)
+            .padding({ left: SP_M, right: SP_M })
+            .backgroundColor(C_FILL)
+            .borderRadius(R_INPUT)
+            .margin({ bottom: SP_M });
+
+            // --- 密码 ---
+            Row() {
+              SymbolGlyph($r('sys.symbol.lock_fill'))
+                .fontSize(18)
+                .fontColor([C_TEXT_3])
+                .margin({ right: SP_S });
+              TextInput({ placeholder: '密码', text: this.password })
+                .layoutWeight(1)
+                .type(this.showPassword ? InputType.Normal : InputType.Password)
+                .backgroundColor(Color.Transparent)
+                .padding(0)
+                .fontSize(F_BODY)
+                .placeholderFont({ size: F_BODY })
+                // 键盘会盖住下面的登录按钮，所以把键盘的「前往」键直接接到登录上
+                .enterKeyType(EnterKeyType.Go)
+                .onSubmit(() => this.handleLogin())
+                .onChange((v: string) => { this.password = v; });
+
+              // $r 的资源名必须是字面量，所以用 if/else 而不是三元表达式
+              if (this.showPassword) {
+                SymbolGlyph($r('sys.symbol.eye'))
+                  .fontSize(ICON_M)
+                  .fontColor([C_TEXT_3])
+                  .onClick(() => { this.showPassword = false; });
+              } else {
+                SymbolGlyph($r('sys.symbol.eye_slash'))
+                  .fontSize(ICON_M)
+                  .fontColor([C_TEXT_3])
+                  .onClick(() => { this.showPassword = true; });
+              }
+            }
+            .width('100%')
+            .height(FIELD_HEIGHT)
+            .padding({ left: SP_M, right: SP_M })
+            .backgroundColor(C_FILL)
+            .borderRadius(R_INPUT)
+            .margin({ bottom: SP_XL });
+
+            // --- 登录按钮 ---
+            Button(this.isLoggingIn ? '登录中...' : '登 录')
+              .width('100%')
+              .height(50)
+              .type(ButtonType.Capsule)
+              .fontSize(16)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(C_TEXT_ON_PRIMARY)
+              .linearGradient({
+                angle: 90,
+                colors: [[C_PRIMARY, 0.0], [C_ACCENT, 1.0]]
+              })
+              .shadow(ShadowStyle.OUTER_FLOATING_SM)
+              .enabled(!this.isLoggingIn)
+              .onClick(() => this.handleLogin());
+
+            if (this.isLoggingIn) {
+              LoadingProgress()
+                .width(28)
+                .height(28)
+                .color(C_PRIMARY)
+                .margin({ top: SP_L });
+            }
+          }
+          .width('100%')
+          .padding(SP_XL)
+          .backgroundColor(C_CARD)
+          .borderRadius(R_CARD)
+          .shadow(ShadowStyle.OUTER_FLOATING_MD)
+          .alignItems(HorizontalAlign.Center);
+
+          Text('数据通过路由器自带的 ubus 接口获取，不经过第三方服务器')
+            .fontSize(F_TINY)
+            .fontColor('#99FFFFFF')
+            .textAlign(TextAlign.Center)
+            .width('100%')
+            .margin({ top: SP_XL, bottom: SP_XL });
         }
         .width('100%')
-        .justifyContent(FlexAlign.SpaceBetween)
-        .margin({ bottom: 12 });
-
-        // 用户名
-        TextInput({ placeholder: '用户名', text: this.username })
-          .onChange((v: string) => { this.username = v.trim(); })
-          .margin({ bottom: 12 });
-
-        // 密码
-        TextInput({ placeholder: '密码', text: this.password })
-          .type(this.showPassword ? InputType.Normal : InputType.Password)
-          .onChange((v: string) => { this.password = v; })
-          .margin({ bottom: 24 });
-
-        // 登录按钮
-        Button('登录')
-          .width('100%')
-          .height(44)
-          .type(ButtonType.Capsule)
-          .stateEffect(true)
-          .enabled(!this.isLoggingIn)
-          .onClick(() => this.handleLogin());
-
-        // 加载指示
-        if (this.isLoggingIn) {
-          LoadingProgress()
-            .width(32).height(32)
-            .margin({ top: 16 });
-        }
+        .padding({ left: SP_XL, right: SP_XL })
       }
-      .width('90%')
-      .padding(24)
-      .backgroundColor(COLOR_CARD_BG)
-      .borderRadius(16)
-      .shadow({ radius: 12, color: '#1A000000', offsetY: 4 })
-      .position({ y: '18%' })
-      .alignItems(HorizontalAlign.Center)
+      .width('100%')
+      .height('100%')
+      .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring);
     }
     .width('100%')
-    .height('100%')
-    .backgroundColor(COLOR_PAGE_BG)
+    .height('100%');
   }
 
   private async handleLogin(): Promise<void> {

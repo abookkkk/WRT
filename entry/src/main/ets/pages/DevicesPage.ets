@@ -8,7 +8,7 @@ import { promptAction } from '@kit.ArkUI';
 import { OpenWrtClient } from '../model/OpenWrtClient';
 import type { DhcpLease } from '../model/OpenWrtModels';
 
-const COLOR_CARD_BG: ResourceColor = '#FFFFFF';
+const COLOR_CARD_BG: ResourceColor = '#F2FFFFFF';
 const COLOR_SECONDARY: ResourceColor = '#666666';
 const COLOR_TERTIARY: ResourceColor = '#999999';
 const COLOR_PRIMARY: ResourceColor = '#0078D4';
@@ -83,8 +83,9 @@ export struct DevicesPage {
                   }
                   .width('100%').justifyContent(FlexAlign.SpaceBetween);
                 }
-                .width('100%').padding(14).backgroundColor(COLOR_CARD_BG)
-                .borderRadius(12).margin({ left: 16, right: 16, bottom: 8 });
+                .width('100%').padding(16).backgroundColor(COLOR_CARD_BG)
+                .borderRadius(18).shadow(ShadowStyle.OUTER_DEFAULT_SM)
+                .margin({ left: 16, right: 16, bottom: 10 });
               }
             }, (device: DhcpLease, index?: number) => {
               return device.mac + device.ip;

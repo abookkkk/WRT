@@ -24,7 +24,7 @@ import type {
   IwinfoScanResult
 } from '../model/OpenWrtModels';
 
-const COLOR_CARD_BG: ResourceColor = '#FFFFFF';
+const COLOR_CARD_BG: ResourceColor = '#F2FFFFFF';
 const COLOR_SECONDARY: ResourceColor = '#666666';
 const COLOR_TERTIARY: ResourceColor = '#999999';
 const COLOR_PRIMARY: ResourceColor = '#0078D4';
@@ -255,7 +255,7 @@ export struct WifiPage {
                 }
               }
               .width('100%').padding(16)
-              .backgroundColor(COLOR_CARD_BG).borderRadius(12)
+              .backgroundColor(COLOR_CARD_BG).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM)
               .margin({ bottom: 12 });
             }, (radio: RadioItem) => radio.radioName + '#' + this.dataVersion)
 
@@ -284,7 +284,7 @@ export struct WifiPage {
                 }, (s: ScanItem) => s.bssid);
               }
               .width('100%').padding(16)
-              .backgroundColor(COLOR_CARD_BG).borderRadius(12)
+              .backgroundColor(COLOR_CARD_BG).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM)
               .margin({ bottom: 12 });
             }
 
@@ -301,7 +301,7 @@ export struct WifiPage {
                 .fontSize(12).fontColor(COLOR_TERTIARY);
             }
             .width('100%').padding(16)
-            .backgroundColor(COLOR_CARD_BG).borderRadius(12);
+            .backgroundColor(COLOR_CARD_BG).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM);
           }
           .width('100%').padding(16)
         }

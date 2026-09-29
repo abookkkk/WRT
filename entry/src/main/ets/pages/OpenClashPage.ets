@@ -12,7 +12,7 @@ import { BusinessError } from '@kit.BasicServicesKit';
 import { OpenWrtClient } from '../model/OpenWrtClient';
 import type { OpenClashSettings } from '../model/OpenWrtModels';
 
-const COLOR_CARD_BG: ResourceColor = '#FFFFFF';
+const COLOR_CARD_BG: ResourceColor = '#F2FFFFFF';
 const COLOR_SECONDARY: ResourceColor = '#666666';
 const COLOR_TERTIARY: ResourceColor = '#999999';
 
@@ -72,7 +72,8 @@ export struct OpenClashPage {
           .width('100%')
           .padding(16)
           .backgroundColor(COLOR_CARD_BG)
-          .borderRadius(12)
+          .borderRadius(20)
+          .shadow(ShadowStyle.OUTER_DEFAULT_SM)
           .margin({ bottom: 12 });
 
           // 重启按钮
@@ -101,7 +102,7 @@ export struct OpenClashPage {
               .fontSize(13).fontColor(COLOR_TERTIARY).margin({ top: 8 }).lineHeight(20);
           }
           .width('100%').padding(16)
-          .backgroundColor(COLOR_CARD_BG).borderRadius(12);
+          .backgroundColor(COLOR_CARD_BG).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM);
         }
         .width('100%').padding(16)
       }

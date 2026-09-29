@@ -1,8 +1,14 @@
 /**
  * 主页（Tab 导航容器）
  *
- * 使用 Tabs 组件包含五个标签页：
- * 仪表盘、网络接口、无线网络、在线设备、OpenClash
+ * 视觉特性（HarmonyOS 6）：
+ *   - 沉浸式：expandSafeArea 让内容延伸到状态栏 / 导航栏区域
+ *   - 渐变背景：浅蓝 → 灰白过渡
+ *   - 毛玻璃胶囊标签栏：barBackgroundBlurStyle + 半透明底
+ *   - 系统符号图标：SymbolGlyph($r('sys.symbol.xxx'))，随选中态变色
+ *
+ * 注意：$r() 的资源名必须是**字面量**，不能用模板字符串拼，
+ * 所以下面每个 Tab 的图标都老老实实写一个 if 分支。
  */
 
 import { promptAction } from '@kit.ArkUI';
@@ -14,6 +20,10 @@ import { NetworkPage } from './NetworkPage';
 import { WifiPage } from './WifiPage';
 import { DevicesPage } from './DevicesPage';
 import { OpenClashPage } from './OpenClashPage';
+import {
+  C_PRIMARY, C_BG_TOP, C_BG_MID, C_BG_BOTTOM, C_TEXT_1, C_TEXT_3, C_DANGER,
+  F_HERO, F_CAPTION, F_TINY, ICON_L, SP_L, SP_S
+} from '../common/Theme';
 
 @Component
 export struct HomePage {
@@ -23,68 +33,135 @@ export struct HomePage {
   @State private currentIndex: number = 0;
 
   build() {
-    Column() {
-      // ===== 顶部标题栏 =====
-      Row() {
-        Text('OpenWrt 管理')
-          .fontSize(20)
-          .fontWeight(FontWeight.Bold);
+    Stack({ alignContent: Alignment.TopStart }) {
+      // ===== 渐变背景 =====
+      // 只让**背景**延伸到状态栏/导航栏后面（沉浸式），
+      // 内容不能一起扩展，否则第一张卡片会被顶到状态栏里被裁掉。
+      Column()
+        .width('100%')
+        .height('100%')
+        .linearGradient({
+          angle: 180,
+          colors: [[C_BG_TOP, 0.0], [C_BG_MID, 0.35], [C_BG_BOTTOM, 1.0]]
+        })
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
 
-        Blank();
+      Column() {
+        // ===== 顶部标题栏 =====
+        Row() {
+          Column() {
+            Text('OpenWrt 管理')
+              .fontSize(F_HERO)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(C_TEXT_1);
+            Text('AX3000T · Filogic 820')
+              .fontSize(F_CAPTION)
+              .fontColor(C_TEXT_3)
+              .margin({ top: 2 });
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1);
 
-        Button('退出')
-          .fontSize(14)
-          .fontColor('#E84040')
-          .type(ButtonType.Normal)
-          .onClick(() => this.handleLogout());
+          Button('退出')
+            .fontSize(F_CAPTION)
+            .fontColor(C_DANGER)
+            .backgroundColor('#1AF53F3F')
+            .height(32)
+            .type(ButtonType.Capsule)
+            .onClick(() => this.handleLogout());
+        }
+        .width('100%')
+        .padding({ left: SP_L, right: SP_L, top: SP_S, bottom: SP_S })
+        .alignItems(VerticalAlign.Center);
+
+        // ===== Tab 内容 =====
+        Tabs({ barPosition: BarPosition.End }) {
+          TabContent() {
+            DashboardPage({ client: this.client })
+          }
+          .tabBar(this.tabItem(0, '仪表盘'))
+
+          TabContent() {
+            NetworkPage({ client: this.client })
+          }
+          .tabBar(this.tabItem(1, '网络'))
+
+          TabContent() {
+            WifiPage({ client: this.client })
+          }
+          .tabBar(this.tabItem(2, '无线'))
+
+          TabContent() {
+            DevicesPage({ client: this.client })
+          }
+          .tabBar(this.tabItem(3, '设备'))
+
+          TabContent() {
+            OpenClashPage({ client: this.client })
+          }
+          .tabBar(this.tabItem(4, 'Clash'))
+        }
+        .layoutWeight(1)
+        .width('100%')
+        .barHeight(62)
+        .barMode(BarMode.Fixed)
+        .barBackgroundColor('#D9FFFFFF')
+        .barBackgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+        .animationDuration(280)
+        .onChange((index: number) => {
+          this.currentIndex = index;
+        });
       }
       .width('100%')
-      .padding({ left: 16, right: 16, top: 8, bottom: 4 });
-
-      // ===== Tab 内容区 =====
-      Tabs({ barPosition: BarPosition.End }) {
-        // Tab 1：仪表盘
-        TabContent() {
-          DashboardPage({ client: this.client })
-        }
-        .tabBar('仪表盘')
-
-        // Tab 2：网络接口
-        TabContent() {
-          NetworkPage({ client: this.client })
-        }
-        .tabBar('网络接口')
-
-        // Tab 3：无线网络
-        TabContent() {
-          WifiPage({ client: this.client })
-        }
-        .tabBar('无线网络')
-
-        // Tab 4：在线设备
-        TabContent() {
-          DevicesPage({ client: this.client })
-        }
-        .tabBar('在线设备')
-
-        // Tab 5：OpenClash
-        TabContent() {
-          OpenClashPage({ client: this.client })
-        }
-        .tabBar('OpenClash')
-      }
-      .layoutWeight(1)
-      .width('100%')
-      // 5 个标签在手机宽度下放不下，改成可横向滚动的标签栏
-      .barMode(BarMode.Scrollable)
-      .onChange((index: number) => {
-        this.currentIndex = index;
-      })
-      .scrollable(true)
-      .animationDuration(300)
+      .height('100%')
     }
     .width('100%')
     .height('100%')
+  }
+
+  /**
+   * 自定义 Tab 项：系统符号图标 + 文字，选中态用主色。
+   * 直接读 this.currentIndex，所以切换时能正常刷新。
+   */
+  @Builder
+  tabItem(index: number, title: string) {
+    Column() {
+      if (index === 0) {
+        SymbolGlyph($r('sys.symbol.house'))
+          .fontSize(ICON_L)
+          .fontColor([this.currentIndex === index ? C_PRIMARY : C_TEXT_3])
+          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+      } else if (index === 1) {
+        SymbolGlyph($r('sys.symbol.rectangle_stack'))
+          .fontSize(ICON_L)
+          .fontColor([this.currentIndex === index ? C_PRIMARY : C_TEXT_3])
+          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+      } else if (index === 2) {
+        SymbolGlyph($r('sys.symbol.wifi'))
+          .fontSize(ICON_L)
+          .fontColor([this.currentIndex === index ? C_PRIMARY : C_TEXT_3])
+          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+      } else if (index === 3) {
+        SymbolGlyph($r('sys.symbol.person'))
+          .fontSize(ICON_L)
+          .fontColor([this.currentIndex === index ? C_PRIMARY : C_TEXT_3])
+          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+      } else {
+        SymbolGlyph($r('sys.symbol.bolt'))
+          .fontSize(ICON_L)
+          .fontColor([this.currentIndex === index ? C_PRIMARY : C_TEXT_3])
+          .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+      }
+
+      Text(title)
+        .fontSize(F_TINY)
+        .fontColor(this.currentIndex === index ? C_PRIMARY : C_TEXT_3)
+        .fontWeight(this.currentIndex === index ? FontWeight.Medium : FontWeight.Normal)
+        .margin({ top: 2 });
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center);
   }
 
   private async handleLogout(): Promise<void> {
@@ -93,7 +170,7 @@ export struct HomePage {
       message: '确定要退出登录吗？',
       buttons: [
         { text: '取消', color: '#666666' },
-        { text: '登出', color: '#E84040' }
+        { text: '登出', color: '#F53F3F' }
       ]
     });
 

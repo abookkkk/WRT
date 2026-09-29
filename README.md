@@ -91,6 +91,27 @@ HarmonyOS **默认禁止明文 HTTP**。想连局域网里的 `http://192.168.x.
 
 ---
 
+## 界面
+
+采用 HarmonyOS 6 (API 24) 的现代 UI 能力：
+
+| 特性 | 实现 |
+|---|---|
+| **沉浸式布局** | `expandSafeArea` 让渐变背景延伸到状态栏 / 导航栏之后（只扩展背景，内容仍留在安全区内） |
+| **系统符号图标** | `SymbolGlyph($r('sys.symbol.xxx'))` —— 标签栏与表单图标全用系统符号：`house` / `rectangle_stack` / `wifi` / `person` / `bolt` / `lock` / `lock_fill` / `eye` / `eye_slash` |
+| **毛玻璃标签栏** | `Tabs.barBackgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)` + 半透明底色 |
+| **渐变背景** | `linearGradient` 浅蓝 → 灰白 |
+| **玻璃拟态卡片** | 半透明白 `#F2FFFFFF` + 圆角 20 + `ShadowStyle.OUTER_DEFAULT_SM` |
+| **登录页** | 深蓝渐变头部 + 圆形半透明徽章 + 玻璃表单卡片；键盘「前往」键通过 `onSubmit` 直接提交登录 |
+| **统一设计令牌** | `entry/src/main/ets/common/Theme.ets` 集中管理颜色 / 圆角 / 间距 / 字号 |
+
+> 💡 **系统符号名从哪来**：DevEco SDK 的
+> `sdk/default/openharmony/toolchains/id_defined.json` 里 `"type":"symbol"` 的记录共 **4000+ 个**，
+> 直接搜关键词即可（如 `wifi`、`house`、`trash`）。注意 `$r()` 的资源名必须是**字面量**，
+> 不能用模板字符串拼，所以按索引分支写 if/else。
+
+---
+
 ## 项目结构
 
 ```
@@ -99,6 +120,8 @@ entry/src/main/
 ├── resources/base/profile/
 │   └── network_config.json          # 明文 HTTP 白名单
 └── ets/
+    ├── common/
+    │   └── Theme.ets                # 设计令牌（颜色 / 圆角 / 间距 / 字号）
     ├── model/
     │   ├── OpenWrtClient.ets        # ubus JSON-RPC 客户端（核心，全部网络调用都在这）
     │   ├── OpenWrtModels.ets        # 数据模型 / 接口定义

@@ -133,10 +133,11 @@ export struct NetworkPage {
       }
     }
     .width('100%')
-    .padding(16)
+    .padding(20)
     .backgroundColor(COLOR_CARD_BG)
-    .borderRadius(12)
-    .margin({ bottom: 12 })
+    .borderRadius(20)
+    .shadow(ShadowStyle.OUTER_DEFAULT_SM)
+    .margin({ bottom: 14 })
   }
 
   @Builder

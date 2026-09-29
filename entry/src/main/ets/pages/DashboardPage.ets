@@ -57,14 +57,14 @@ export struct DashboardPage {
               Text('路由器信息').fontSize(16).fontWeight(FontWeight.Bold).width('100%');
               this.routerInfoRows();
             }
-            .width('100%').padding(16).backgroundColor('#FFFFFF').borderRadius(12).margin({ bottom: 12 });
+            .width('100%').padding(20).backgroundColor('#F2FFFFFF').borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
 
             // 卡片 2：运行状态
             Column() {
               Text('运行状态').fontSize(16).fontWeight(FontWeight.Bold).width('100%');
               this.runStatusRows();
             }
-            .width('100%').padding(16).backgroundColor('#FFFFFF').borderRadius(12).margin({ bottom: 12 });
+            .width('100%').padding(20).backgroundColor('#F2FFFFFF').borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
 
             // 卡片 3：内存使用率
             Column() {
@@ -79,7 +79,7 @@ export struct DashboardPage {
               Text(`${this.memoryPercent}%`)
                 .fontSize(12).fontColor(COLOR_SECONDARY).width('100%').textAlign(TextAlign.End).margin({ top: 4 });
             }
-            .width('100%').padding(16).backgroundColor('#FFFFFF').borderRadius(12).margin({ bottom: 12 });
+            .width('100%').padding(20).backgroundColor('#F2FFFFFF').borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
 
             // 卡片 4：在线设备
             Column() {
@@ -89,7 +89,7 @@ export struct DashboardPage {
                 .fontColor(this.onlineDevices > 0 ? COLOR_PRIMARY : '#000000');
               Text('台设备在线').fontSize(14).fontColor(COLOR_SECONDARY).margin({ top: 4 });
             }
-            .width('100%').padding(16).backgroundColor('#FFFFFF').borderRadius(12).margin({ bottom: 12 });
+            .width('100%').padding(20).backgroundColor('#F2FFFFFF').borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
 
             // 刷新按钮
             Button('刷新数据')
