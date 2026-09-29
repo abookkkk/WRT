@@ -388,6 +388,32 @@ List() { ... }
 否则主机名、MAC 地址这类文本会在列内居中（实测设备卡片就中招了：
 `HCL` 显示在 `[727,534]` 而不是 `[294,534]`）。
 
+### 8. ⚠️ 颜色一律走资源，页面里不要写死色值（否则夜间模式必炸）
+
+调色板只有两份，**新增颜色必须两边都加**（名字一致）：
+
+| 文件 | 用途 |
+|---|---|
+| `entry/src/main/resources/base/element/color.json` | 浅色 |
+| `entry/src/main/resources/dark/element/color.json` | 深色 |
+
+- 资源名统一 `c_` 前缀（主色 `c_primary`、卡片 `c_card`、文字三级 `c_text_1/2/3`、页面渐变 `c_bg_top/mid/bottom`……）；
+- 页面里通过 `common/Theme.ets` 的 `C_XXX` 常量引用（类型是 `Resource`），**不要写 `'#xxxxxx'`**；
+- 收不了 `Resource` 的地方 —— Canvas 的 `strokeStyle`/`fillStyle`、`promptAction.showDialog` 按钮的 `color`
+  （它们的类型是 `string`）—— 用 Theme 里的 `colorString(res, 回退值)` / `colorRgba(res, 回退值, alpha)`
+  在运行时取色，这样深色下也会跟着变；
+- 外观模式由 `model/ThemeSettings.ets` 统一管：
+  `ApplicationContext.setColorMode()`，`COLOR_MODE_NOT_SET` = 跟随系统，选择存在 `openwrt_settings`
+  这个 preferences 里；App 启动时在 `EntryAbility.onCreate` 应用（必须早于加载页面，否则会先按系统模式渲染一帧）；
+- **沉浸式下状态栏/导航栏的图标颜色不会跟着应用模式走**（它跟的是系统模式），强制深色时必须自己
+  `setWindowSystemBarProperties({statusBarContentColor, navigationBarContentColor})`，ThemeSettings 已处理；
+- 想判断"当前实际是不是深色"**不要查 Configuration**：`resourceManager` 的 `Configuration` 类型上没有
+  暴露 `colorMode`（编译不过），`ApplicationContext.config` 也不存在。ThemeSettings 里的做法是拿背景色资源的
+  实际解析结果按亮度反推，跟随系统时也准；
+- 实测验证方式（模拟器）：`uitest dumpLayout` 取按钮坐标 → `uitest uiInput click` →
+  `snapshot_display` 截图 → 采样背景像素判断深浅；系统深浅色可在「设置 → 显示和亮度」里切，
+  跟随系统模式下 App 会立即跟着变。
+
 ---
 
 ## 八、构建 / 部署备忘

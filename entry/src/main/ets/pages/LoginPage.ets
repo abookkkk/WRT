@@ -10,8 +10,9 @@ import { OpenWrtClient } from '../model/OpenWrtClient';
 import { SessionStore } from '../model/SessionStore';
 import { GlobalContext } from '../model/GlobalContext';
 import {
-  C_PRIMARY, C_ACCENT, C_TEXT_1, C_TEXT_2, C_TEXT_3, C_TEXT_ON_PRIMARY,
-  C_CARD, C_FILL, C_DANGER,
+  C_PRIMARY, C_ACCENT, C_TEXT_1, C_TEXT_2, C_TEXT_3, C_TEXT_ON_PRIMARY, C_TEXT_ON_PRIMARY_DIM,
+  C_CARD, C_FILL, C_DANGER, C_BADGE,
+  C_LOGIN_GRAD_0, C_LOGIN_GRAD_1, C_LOGIN_GRAD_2, C_LOGIN_GRAD_3,
   F_HERO, F_BODY, F_CAPTION, F_TINY,
   R_CARD, R_INPUT, R_BTN, SP_S, SP_M, SP_L, SP_XL, ICON_M
 } from '../common/Theme';
@@ -63,10 +64,10 @@ export struct LoginPage {
         .linearGradient({
           angle: 170,
           colors: [
-            [C_PRIMARY, 0.00],
-            ['#3D7BFF', 0.28],
-            ['#F0F4FF', 0.62],
-            ['#F5F6F8', 1.00]
+            [C_LOGIN_GRAD_0, 0.00],
+            [C_LOGIN_GRAD_1, 0.28],
+            [C_LOGIN_GRAD_2, 0.62],
+            [C_LOGIN_GRAD_3, 1.00]
           ]
         })
         .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
@@ -76,7 +77,7 @@ export struct LoginPage {
           // ===== 头部 Logo 区 =====
           Column() {
             Stack() {
-              Circle().width(88).height(88).fill('#33FFFFFF');
+              Circle().width(88).height(88).fill(C_BADGE);
               SymbolGlyph($r('sys.symbol.wifi'))
                 .fontSize(46)
                 .fontColor([Color.White])
@@ -93,7 +94,7 @@ export struct LoginPage {
 
             Text('路由器控制台')
               .fontSize(F_CAPTION)
-              .fontColor('#CCFFFFFF')
+              .fontColor(C_TEXT_ON_PRIMARY_DIM)
               .margin({ top: 2 });
           }
           .width('100%')

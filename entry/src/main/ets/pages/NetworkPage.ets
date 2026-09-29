@@ -14,7 +14,7 @@ import { OpenWrtClient } from '../model/OpenWrtClient';
 import type { NetworkInterface, NetAddress, NetDeviceStats } from '../model/OpenWrtModels';
 import {
   C_PRIMARY, C_SUCCESS, C_WARNING, C_TEXT_1, C_TEXT_2, C_TEXT_3,
-  C_CARD, C_DIVIDER, C_FILL,
+  C_CARD, C_DIVIDER, C_FILL, C_SUCCESS_CHIP, C_WARNING_CHIP,
   F_SECTION, F_BODY, F_CAPTION, F_TINY,
   R_CARD, R_CHIP, SP_S, SP_M, SP_L, SP_XL, ICON_S
 } from '../common/Theme';
@@ -144,7 +144,7 @@ export struct NetworkPage {
             .fontColor(iface.up ? C_SUCCESS : C_TEXT_3);
         }
         .padding({ left: SP_S, right: SP_S, top: 3, bottom: 3 })
-        .backgroundColor(iface.up ? '#1A1DB954' : C_FILL)
+        .backgroundColor(iface.up ? C_SUCCESS_CHIP : C_FILL)
         .borderRadius(R_CHIP);
       }
       .width('100%')
@@ -219,7 +219,7 @@ export struct NetworkPage {
                 Text(this.formatRate(iface.rxRate))
                   .fontSize(F_TINY)
                   .fontColor(C_SUCCESS)
-                  .backgroundColor('#1A1DB954')
+                  .backgroundColor(C_SUCCESS_CHIP)
                   .padding({ left: 6, right: 6, top: 1, bottom: 1 })
                   .borderRadius(6)
                   .margin({ left: 6 });
@@ -256,7 +256,7 @@ export struct NetworkPage {
                 Text(this.formatRate(iface.txRate))
                   .fontSize(F_TINY)
                   .fontColor(C_WARNING)
-                  .backgroundColor('#1AFF9500')
+                  .backgroundColor(C_WARNING_CHIP)
                   .padding({ left: 6, right: 6, top: 1, bottom: 1 })
                   .borderRadius(6)
                   .margin({ left: 6 });

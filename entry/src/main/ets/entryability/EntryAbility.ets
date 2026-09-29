@@ -7,10 +7,11 @@
  * 3. 加载主页面 Index.ets
  */
 
-import { AbilityConstant, UIAbility, Want } from '@kit.AbilityKit';
+import { AbilityConstant, UIAbility, Want, Configuration } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { window } from '@kit.ArkUI';
 import { GlobalContext } from '../model/GlobalContext';
+import { ThemeSettings, AppearanceMode } from '../model/ThemeSettings';
 
 const DOMAIN = 0x0000;
 
@@ -18,7 +19,19 @@ export default class EntryAbility extends UIAbility {
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
     // 保存全局上下文，供 SessionStore 等使用
     GlobalContext.getInstance().setContext(this.context);
-    hilog.info(DOMAIN, 'OpenWrtApp', 'EntryAbility onCreate');
+    // 应用上次选择的外观模式（跟随系统 / 浅色 / 深色）。
+    // 必须赶在加载页面之前设好，否则会先按系统模式渲染一帧再跳成用户选的那套。
+    const mode: AppearanceMode = ThemeSettings.load(this.context);
+    ThemeSettings.apply(this.context, mode);
+    hilog.info(DOMAIN, 'OpenWrtApp', 'EntryAbility onCreate, appearance=%{public}s', mode);
+  }
+
+  onConfigurationUpdate(newConfig: Configuration): void {
+    // 系统深浅色变化时回调。跟随系统模式下状态栏/导航栏的图标颜色要重新同步
+    // （这里只改系统栏配色、不再调 setColorMode，避免和系统配置回调互相触发）。
+    const mode: AppearanceMode = ThemeSettings.load(this.context);
+    ThemeSettings.refreshSystemBar(this.context, mode);
+    hilog.info(DOMAIN, 'OpenWrtApp', 'onConfigurationUpdate, appearance=%{public}s', mode);
   }
 
   onDestroy(): void {
@@ -27,6 +40,9 @@ export default class EntryAbility extends UIAbility {
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
     hilog.info(DOMAIN, 'OpenWrtApp', 'onWindowStageCreate');
+
+    // 窗口到这一步才存在，补一次系统栏图标配色（onCreate 里调用会因为没有窗口而失败）
+    ThemeSettings.refreshSystemBar(this.context, ThemeSettings.load(this.context));
 
     // 设置窗口布局
     windowStage.loadContent('pages/Index', (err) => {

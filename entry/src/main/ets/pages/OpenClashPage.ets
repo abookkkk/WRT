@@ -23,9 +23,9 @@ import { OpenWrtClient } from '../model/OpenWrtClient';
 import type { OpenClashSettings, ClashGroup } from '../model/OpenWrtModels';
 import {
   C_PRIMARY, C_SUCCESS, C_WARNING, C_DANGER, C_TEXT_1, C_TEXT_2, C_TEXT_3,
-  C_CARD, C_DIVIDER, C_FILL,
+  C_CARD, C_DIVIDER, C_FILL, C_SUCCESS_CHIP,
   F_SECTION, F_BODY, F_CAPTION, F_TINY,
-  R_CARD, R_CHIP, SP_S, SP_M, SP_L, SP_XL
+  R_CARD, R_CHIP, SP_S, SP_M, SP_L, SP_XL, colorString
 } from '../common/Theme';
 
 const COLOR_CARD_BG: ResourceColor = C_CARD;
@@ -156,7 +156,7 @@ export struct OpenClashPage {
             .fontColor(this.isRunning ? C_SUCCESS : C_TEXT_3);
         }
         .padding({ left: SP_S, right: SP_S, top: 3, bottom: 3 })
-        .backgroundColor(this.isRunning ? '#1A1DB954' : C_FILL)
+        .backgroundColor(this.isRunning ? C_SUCCESS_CHIP : C_FILL)
         .borderRadius(R_CHIP);
       }
       .width('100%')
@@ -482,8 +482,8 @@ export struct OpenClashPage {
       message: '将模式改为「' + MODE_LABELS[index] + '」。\n' +
                '注意：需要重启 OpenClash 才生效，期间代理会中断几秒。',
       buttons: [
-        { text: '取消', color: '#666666' },
-        { text: '切换', color: '#0A59F7' }
+        { text: '取消', color: colorString(C_TEXT_2, '#666666') },
+        { text: '切换', color: colorString(C_PRIMARY, '#0A59F7') }
       ]
     }).then((result: promptAction.ShowDialogSuccessResponse) => {
       if (result.index === 1) {
@@ -522,8 +522,8 @@ export struct OpenClashPage {
       title: '确认重启',
       message: '确定要重启 OpenClash 吗？代理会中断几秒钟。',
       buttons: [
-        { text: '取消', color: '#666666' },
-        { text: '确定', color: '#FF9500' }
+        { text: '取消', color: colorString(C_TEXT_2, '#666666') },
+        { text: '确定', color: colorString(C_WARNING, '#FF9500') }
       ]
     }).then((result: promptAction.ShowDialogSuccessResponse) => {
       if (result.index === 1) {

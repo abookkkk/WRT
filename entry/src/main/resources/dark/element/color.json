@@ -3,6 +3,134 @@
     {
       "name": "start_window_background",
       "value": "#000000"
+    },
+    {
+      "name": "c_primary",
+      "value": "#4C8DFF"
+    },
+    {
+      "name": "c_primary_deep",
+      "value": "#2F6BE0"
+    },
+    {
+      "name": "c_primary_soft",
+      "value": "#16243D"
+    },
+    {
+      "name": "c_accent",
+      "value": "#8A7BFF"
+    },
+    {
+      "name": "c_success",
+      "value": "#3DD68C"
+    },
+    {
+      "name": "c_success_soft",
+      "value": "#14301F"
+    },
+    {
+      "name": "c_success_chip",
+      "value": "#333DD68C"
+    },
+    {
+      "name": "c_warning",
+      "value": "#FFB84D"
+    },
+    {
+      "name": "c_warning_soft",
+      "value": "#33260F"
+    },
+    {
+      "name": "c_warning_chip",
+      "value": "#33FFB84D"
+    },
+    {
+      "name": "c_danger",
+      "value": "#FF6B6B"
+    },
+    {
+      "name": "c_danger_soft",
+      "value": "#3A1B1B"
+    },
+    {
+      "name": "c_danger_chip",
+      "value": "#33FF6B6B"
+    },
+    {
+      "name": "c_text_1",
+      "value": "#E6E6E6"
+    },
+    {
+      "name": "c_text_2",
+      "value": "#A6A6A6"
+    },
+    {
+      "name": "c_text_3",
+      "value": "#7A7A7A"
+    },
+    {
+      "name": "c_text_on_primary",
+      "value": "#FFFFFF"
+    },
+    {
+      "name": "c_text_on_primary_dim",
+      "value": "#B3FFFFFF"
+    },
+    {
+      "name": "c_card",
+      "value": "#14FFFFFF"
+    },
+    {
+      "name": "c_card_solid",
+      "value": "#1C1C1E"
+    },
+    {
+      "name": "c_card_border",
+      "value": "#3D4C8DFF"
+    },
+    {
+      "name": "c_divider",
+      "value": "#1FFFFFFF"
+    },
+    {
+      "name": "c_fill",
+      "value": "#14FFFFFF"
+    },
+    {
+      "name": "c_bg_top",
+      "value": "#10141C"
+    },
+    {
+      "name": "c_bg_mid",
+      "value": "#14171E"
+    },
+    {
+      "name": "c_bg_bottom",
+      "value": "#181B21"
+    },
+    {
+      "name": "c_bar",
+      "value": "#D91C1C1E"
+    },
+    {
+      "name": "c_login_grad_0",
+      "value": "#0B1B33"
+    },
+    {
+      "name": "c_login_grad_1",
+      "value": "#12213F"
+    },
+    {
+      "name": "c_login_grad_2",
+      "value": "#161A21"
+    },
+    {
+      "name": "c_login_grad_3",
+      "value": "#181B21"
+    },
+    {
+      "name": "c_badge",
+      "value": "#33FFFFFF"
     }
   ]
 }

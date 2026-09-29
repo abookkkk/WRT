@@ -7,11 +7,13 @@
 import { promptAction } from '@kit.ArkUI';
 import { OpenWrtClient } from '../model/OpenWrtClient';
 import type { DhcpLease } from '../model/OpenWrtModels';
+import { C_PRIMARY, C_SUCCESS, C_DANGER, C_TEXT_2, C_TEXT_3, C_CARD } from '../common/Theme';
 
-const COLOR_CARD_BG: ResourceColor = '#F2FFFFFF';
-const COLOR_SECONDARY: ResourceColor = '#666666';
-const COLOR_TERTIARY: ResourceColor = '#999999';
-const COLOR_PRIMARY: ResourceColor = '#0078D4';
+// 颜色统一走 Theme 里的资源（浅色/深色两套自动切换）
+const COLOR_CARD_BG: ResourceColor = C_CARD;
+const COLOR_SECONDARY: ResourceColor = C_TEXT_2;
+const COLOR_TERTIARY: ResourceColor = C_TEXT_3;
+const COLOR_PRIMARY: ResourceColor = C_PRIMARY;
 
 @Component
 export struct DevicesPage {
@@ -77,7 +79,7 @@ export struct DevicesPage {
                       // 状态指示灯用文本替代
                       Text(this.isLeaseActive(device) ? '●' : '○')
                         .fontSize(14)
-                        .fontColor(this.isLeaseActive(device) ? Color.Green : Color.Gray);
+                        .fontColor(this.isLeaseActive(device) ? C_SUCCESS : C_TEXT_3);
                     }
                     .width('100%').margin({ bottom: 8 });
 
@@ -85,7 +87,7 @@ export struct DevicesPage {
                       Text(device.ip).fontSize(14).fontWeight(FontWeight.Medium).fontFamily('monospace');
                       Text(this.formatExpiry(device.end))
                         .fontSize(12)
-                        .fontColor(this.isLeaseActive(device) ? COLOR_SECONDARY : Color.Red);
+                        .fontColor(this.isLeaseActive(device) ? COLOR_SECONDARY : C_DANGER);
                     }
                     .width('100%').justifyContent(FlexAlign.SpaceBetween);
                   }

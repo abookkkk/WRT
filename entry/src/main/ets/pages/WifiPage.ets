@@ -24,13 +24,18 @@ import type {
   IwinfoScanResult
 } from '../model/OpenWrtModels';
 
-const COLOR_CARD_BG: ResourceColor = '#F2FFFFFF';
-const COLOR_SECONDARY: ResourceColor = '#666666';
-const COLOR_TERTIARY: ResourceColor = '#999999';
-const COLOR_PRIMARY: ResourceColor = '#0078D4';
-const COLOR_GREEN: ResourceColor = '#1DB954';
-const COLOR_RED: ResourceColor = '#E84040';
-const COLOR_ORANGE: ResourceColor = '#FF8800';
+import {
+  C_PRIMARY, C_SUCCESS, C_WARNING, C_DANGER, C_TEXT_2, C_TEXT_3, C_CARD
+} from '../common/Theme';
+
+// 颜色统一走 Theme 里的资源（浅色/深色两套自动切换）
+const COLOR_CARD_BG: ResourceColor = C_CARD;
+const COLOR_SECONDARY: ResourceColor = C_TEXT_2;
+const COLOR_TERTIARY: ResourceColor = C_TEXT_3;
+const COLOR_PRIMARY: ResourceColor = C_PRIMARY;
+const COLOR_GREEN: ResourceColor = C_SUCCESS;
+const COLOR_RED: ResourceColor = C_DANGER;
+const COLOR_ORANGE: ResourceColor = C_WARNING;
 
 /** 页面用的客户端条目 */
 class ClientItem {

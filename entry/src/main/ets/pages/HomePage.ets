@@ -17,14 +17,16 @@ import { common } from '@kit.AbilityKit';
 import { OpenWrtClient } from '../model/OpenWrtClient';
 import { SessionStore } from '../model/SessionStore';
 import { GlobalContext } from '../model/GlobalContext';
+import { ThemeSettings, AppearanceMode } from '../model/ThemeSettings';
 import { DashboardPage } from './DashboardPage';
 import { NetworkPage } from './NetworkPage';
 import { WifiPage } from './WifiPage';
 import { DevicesPage } from './DevicesPage';
 import { OpenClashPage } from './OpenClashPage';
 import {
-  C_PRIMARY, C_BG_TOP, C_BG_MID, C_BG_BOTTOM, C_TEXT_1, C_TEXT_3, C_DANGER,
-  F_HERO, F_CAPTION, F_TINY, ICON_L, SP_L, SP_S
+  C_PRIMARY, C_BG_TOP, C_BG_MID, C_BG_BOTTOM, C_TEXT_1, C_TEXT_2, C_TEXT_3, C_DANGER,
+  C_FILL, C_BAR, C_DANGER_CHIP,
+  F_HERO, F_CAPTION, F_TINY, ICON_L, ICON_M, SP_XS, SP_S, SP_M, SP_L, colorString
 } from '../common/Theme';
 
 @Component
@@ -43,8 +45,49 @@ export struct HomePage {
    */
   @State private bottomInset: number = 0;
 
+  /** 当前外观模式（跟随系统 / 浅色 / 深色）：按钮文案与图标都用它 */
+  @State private appearance: AppearanceMode = 'system';
+
   aboutToAppear(): void {
     this.measureBottomInset();
+    // 启动时 EntryAbility 已经应用过外观，这里读一次只为让按钮显示正确的状态
+    try {
+      const ctx = getContext(this) as common.UIAbilityContext;
+      this.appearance = ThemeSettings.load(ctx);
+    } catch (e) {
+      console.warn('[HomePage] 读取外观设置失败: ' + JSON.stringify(e));
+    }
+  }
+
+  /** 外观按钮文案 */
+  private appearanceLabel(): string {
+    if (this.appearance === 'light') {
+      return '浅色';
+    }
+    if (this.appearance === 'dark') {
+      return '深色';
+    }
+    return '跟随系统';
+  }
+
+  /**
+   * 点一下循环切换：跟随系统 → 深色 → 浅色 → 跟随系统。
+   * 默认是跟随系统，所以点一下就先落进夜间模式（需求里最常用的那个方向）。
+   */
+  private cycleAppearance(): void {
+    let next: AppearanceMode = 'dark';
+    if (this.appearance === 'system') {
+      next = 'dark';
+    } else if (this.appearance === 'dark') {
+      next = 'light';
+    } else {
+      next = 'system';
+    }
+    this.appearance = next;
+    const ctx = getContext(this) as common.UIAbilityContext;
+    ThemeSettings.save(ctx, next);
+    ThemeSettings.apply(ctx, next);
+    promptAction.showToast({ message: '外观已切换为：' + this.appearanceLabel(), duration: 1500 });
   }
 
   /** 读窗口底部避让区（取系统区与手势条区的较大值），换算成 vp */
@@ -93,10 +136,43 @@ export struct HomePage {
           .alignItems(HorizontalAlign.Start)
           .layoutWeight(1);
 
+          // ===== 外观切换按钮：跟随系统 / 深色 / 浅色，点一下循环 =====
+          Button() {
+            Row() {
+              if (this.appearance === 'light') {
+                SymbolGlyph($r('sys.symbol.sun_max'))
+                  .fontSize(ICON_M)
+                  .fontColor([C_TEXT_2])
+                  .renderingStrategy(SymbolRenderingStrategy.SINGLE);
+              } else if (this.appearance === 'dark') {
+                SymbolGlyph($r('sys.symbol.moon_fill'))
+                  .fontSize(ICON_M)
+                  .fontColor([C_TEXT_2])
+                  .renderingStrategy(SymbolRenderingStrategy.SINGLE);
+              } else {
+                SymbolGlyph($r('sys.symbol.auto_sun_max_fill'))
+                  .fontSize(ICON_M)
+                  .fontColor([C_TEXT_2])
+                  .renderingStrategy(SymbolRenderingStrategy.SINGLE);
+              }
+              Text(this.appearanceLabel())
+                .fontSize(F_CAPTION)
+                .fontColor(C_TEXT_2)
+                .margin({ left: SP_XS });
+            }
+            .alignItems(VerticalAlign.Center);
+          }
+          .height(32)
+          .type(ButtonType.Capsule)
+          .backgroundColor(C_FILL)
+          .padding({ left: SP_M, right: SP_M })
+          .margin({ right: SP_S })
+          .onClick(() => this.cycleAppearance());
+
           Button('退出')
             .fontSize(F_CAPTION)
             .fontColor(C_DANGER)
-            .backgroundColor('#1AF53F3F')
+            .backgroundColor(C_DANGER_CHIP)
             .height(32)
             .type(ButtonType.Capsule)
             .onClick(() => this.handleLogout());
@@ -136,7 +212,7 @@ export struct HomePage {
         .width('100%')
         .barHeight(62)
         .barMode(BarMode.Fixed)
-        .barBackgroundColor('#D9FFFFFF')
+        .barBackgroundColor(C_BAR)
         .barBackgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
         .animationDuration(280)
         .onChange((index: number) => {
@@ -160,7 +236,7 @@ export struct HomePage {
       Column()
         .width('100%')
         .height(this.bottomInset)
-        .backgroundColor('#D9FFFFFF')
+        .backgroundColor(C_BAR)
         .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
         .position({ x: 0, y: '100%' })
         .hitTestBehavior(HitTestMode.None)
@@ -219,8 +295,8 @@ export struct HomePage {
       title: '确认登出',
       message: '确定要退出登录吗？',
       buttons: [
-        { text: '取消', color: '#666666' },
-        { text: '登出', color: '#F53F3F' }
+        { text: '取消', color: colorString(C_TEXT_2, '#666666') },
+        { text: '登出', color: colorString(C_DANGER, '#F53F3F') }
       ]
     });
 

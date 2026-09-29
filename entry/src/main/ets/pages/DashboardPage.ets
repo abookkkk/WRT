@@ -8,15 +8,18 @@ import { promptAction } from '@kit.ArkUI';
 import { OpenWrtClient } from '../model/OpenWrtClient';
 import type { SystemBoard, SystemInfo, NetDeviceStats } from '../model/OpenWrtModels';
 import {
-  C_SUCCESS, C_WARNING, C_TEXT_1, C_TEXT_2, C_TEXT_3, C_CARD,
-  F_SECTION, F_TINY, R_CARD, SP_S, SP_M, SP_XL, ICON_S
+  C_PRIMARY, C_SUCCESS, C_WARNING, C_DANGER, C_DIVIDER,
+  C_TEXT_1, C_TEXT_2, C_TEXT_3, C_CARD,
+  F_SECTION, F_TINY, R_CARD, SP_S, SP_M, SP_XL, ICON_S,
+  colorString, colorRgba
 } from '../common/Theme';
 
-const COLOR_PRIMARY: ResourceColor = '#0078D4';
-const COLOR_SECONDARY: ResourceColor = '#666666';
-const COLOR_GREEN: ResourceColor = '#4CAF50';
-const COLOR_ORANGE: ResourceColor = '#FF9800';
-const COLOR_RED: ResourceColor = '#F44336';
+// 颜色统一走 Theme 里的资源（浅色/深色两套自动切换），页面内不再写死色值
+const COLOR_PRIMARY: ResourceColor = C_PRIMARY;
+const COLOR_SECONDARY: ResourceColor = C_TEXT_2;
+const COLOR_GREEN: ResourceColor = C_SUCCESS;
+const COLOR_ORANGE: ResourceColor = C_WARNING;
+const COLOR_RED: ResourceColor = C_DANGER;
 // 自动刷新间隔（毫秒）
 // 注意：每次刷新要发 3 个 ubus 请求（system.board + system.info + luci-rpc.getDHCPLeases），
 // 原来写 1000（1 秒）等于每秒 3 次请求去轰炸一台 256MB 的路由器，太长不看也得改。
@@ -183,7 +186,7 @@ export struct DashboardPage {
                 .width('100%')
                 .margin({ top: 2 });
             }
-            .width('100%').padding(SP_XL).backgroundColor('#F2FFFFFF')
+            .width('100%').padding(SP_XL).backgroundColor(C_CARD)
             .borderRadius(R_CARD).shadow(ShadowStyle.OUTER_DEFAULT_SM)
             .margin({ bottom: 14 });
 
@@ -192,14 +195,14 @@ export struct DashboardPage {
               Text('路由器信息').fontSize(16).fontWeight(FontWeight.Bold).width('100%');
               this.routerInfoRows();
             }
-            .width('100%').padding(20).backgroundColor('#F2FFFFFF').borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
+            .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
 
             // 卡片 2：运行状态
             Column() {
               Text('运行状态').fontSize(16).fontWeight(FontWeight.Bold).width('100%');
               this.runStatusRows();
             }
-            .width('100%').padding(20).backgroundColor('#F2FFFFFF').borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
+            .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
 
             // 卡片 3：内存使用率
             Column() {
@@ -221,17 +224,17 @@ export struct DashboardPage {
               }
               .width('100%').margin({ top: 6 });
             }
-            .width('100%').padding(20).backgroundColor('#F2FFFFFF').borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
+            .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
 
             // 卡片 4：在线设备
             Column() {
               Text('在线设备').fontSize(16).fontWeight(FontWeight.Bold).width('100%');
               Text(String(this.onlineDevices))
                 .fontSize(40).fontWeight(FontWeight.Bold)
-                .fontColor(this.onlineDevices > 0 ? COLOR_PRIMARY : '#000000');
+                .fontColor(this.onlineDevices > 0 ? COLOR_PRIMARY : C_TEXT_1);
               Text('台设备在线').fontSize(14).fontColor(COLOR_SECONDARY).margin({ top: 4 });
             }
-            .width('100%').padding(20).backgroundColor('#F2FFFFFF').borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
+            .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
 
             // 刷新按钮
             Button('刷新数据')
@@ -571,7 +574,7 @@ export struct DashboardPage {
     // 基线
     this.canvasCtx.beginPath();
     this.canvasCtx.lineWidth = 1;
-    this.canvasCtx.strokeStyle = '#14000000';
+    this.canvasCtx.strokeStyle = colorString(C_DIVIDER, '#14000000');
     this.canvasCtx.moveTo(0, h - 0.5);
     this.canvasCtx.lineTo(w, h - 0.5);
     this.canvasCtx.stroke();
@@ -586,7 +589,7 @@ export struct DashboardPage {
     }
     this.canvasCtx.lineTo(x0 + (n - 1) * stepX, h);
     this.canvasCtx.closePath();
-    this.canvasCtx.fillStyle = 'rgba(29, 185, 84, 0.16)';
+    this.canvasCtx.fillStyle = colorRgba(C_SUCCESS, '#1DB954', 0.16);
     this.canvasCtx.fill();
 
     // 下行：描边
@@ -594,7 +597,7 @@ export struct DashboardPage {
     this.canvasCtx.lineWidth = 2;
     this.canvasCtx.lineJoin = 'round';
     this.canvasCtx.lineCap = 'round';
-    this.canvasCtx.strokeStyle = C_SUCCESS;
+    this.canvasCtx.strokeStyle = colorString(C_SUCCESS, '#1DB954');
     for (let i = 0; i < n; i++) {
       const x: number = x0 + i * stepX;
       const y: number = padTop + usable * (1 - this.rateHistory[i].rx / rxScale);
@@ -611,7 +614,7 @@ export struct DashboardPage {
     this.canvasCtx.lineWidth = 2;
     this.canvasCtx.lineJoin = 'round';
     this.canvasCtx.lineCap = 'round';
-    this.canvasCtx.strokeStyle = C_WARNING;
+    this.canvasCtx.strokeStyle = colorString(C_WARNING, '#FF9500');
     for (let i = 0; i < n; i++) {
       const x: number = x0 + i * stepX;
       const y: number = padTop + usable * (1 - this.rateHistory[i].tx / txScale);
