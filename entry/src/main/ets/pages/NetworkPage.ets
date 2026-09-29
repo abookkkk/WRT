@@ -19,6 +19,7 @@ export struct NetworkPage {
 
   @State private interfaces: NetworkInterface[] = [];
   @State private isLoading: boolean = true;
+  @State private isRefreshing: boolean = false;
   @State private hasError: boolean = false;
   @State private errorMsg: string = '';
 
@@ -29,21 +30,30 @@ export struct NetworkPage {
   build() {
     Stack() {
       if (!this.isLoading && !this.hasError) {
-        Scroll() {
-          Column() {
-            ForEach(this.interfaces, (iface: NetworkInterface) => {
-              this.buildInterfaceCard(iface);
-            }, (iface: NetworkInterface, index?: number) => {
-              return iface.interface + String(index);
-            });
+        // 下拉刷新用 Refresh 组件。
+        // 绝不要用 Scroll/List 的 onReachStart —— 列表初始就在顶部会立刻触发，
+        // 数据更新又引起重渲染，于是反复触发，形成无限刷新循环。
+        Refresh({ refreshing: this.isRefreshing }) {
+          Scroll() {
+            Column() {
+              ForEach(this.interfaces, (iface: NetworkInterface) => {
+                this.buildInterfaceCard(iface);
+              }, (iface: NetworkInterface, index?: number) => {
+                return iface.interface + String(index);
+              });
+            }
+            .width('100%')
+            .padding(16)
           }
           .width('100%')
-          .padding(16)
+          .height('100%')
+          .edgeEffect(EdgeEffect.Spring)
         }
         .width('100%')
         .height('100%')
-        .edgeEffect(EdgeEffect.Spring)
-        .onReachStart(() => this.refreshData())
+        .onRefreshing(() => {
+          this.refreshData();
+        })
       }
 
       if (this.isLoading) {
@@ -186,10 +196,13 @@ export struct NetworkPage {
       console.error('[NetworkPage] 异常: ' + JSON.stringify(e));
     } finally {
       this.isLoading = false;
+      this.isRefreshing = false;
     }
   }
 
   private refreshData(): void {
+    if (this.isRefreshing) return;
+    this.isRefreshing = true;
     promptAction.showToast({ message: '正在刷新...', duration: 800 });
     this.loadNetworkData();
   }

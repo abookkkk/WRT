@@ -40,59 +40,70 @@ export struct DevicesPage {
           }
           .width('100%').padding({ left: 16, right: 16, top: 12, bottom: 4 });
 
-          List() {
-            ForEach(this.devices, (device: DhcpLease) => {
-              ListItem() {
-                // 设备卡片（不拆分 @Builder，全内联）
-                Column() {
-                  Row() {
-                    // 用文本代替 Circle 头像
-                    Text(this.getInitial(device.hostname))
-                      .fontSize(18)
-                      .fontWeight(FontWeight.Bold)
-                      .fontColor(Color.White)
-                      .textAlign(TextAlign.Center)
-                      .width(40).height(40)
-                      .backgroundColor(this.getDeviceColor(device.hostname))
-                      .borderRadius(20)
-                      .margin({ right: 12 });
+          // 下拉刷新用 Refresh 组件。
+          // 千万不要用 List 的 onReachStart —— 它在列表初次渲染（本来就在顶部）时就会触发，
+          // 加载完数据又引起重渲染，于是再次触发，形成无限刷新循环。
+          Refresh({ refreshing: this.isRefreshing }) {
+            List() {
+              ForEach(this.devices, (device: DhcpLease) => {
+                ListItem() {
+                  // 设备卡片（不拆分 @Builder，全内联）
+                  Column() {
+                    Row() {
+                      // 用文本代替 Circle 头像
+                      Text(this.getInitial(device.hostname))
+                        .fontSize(18)
+                        .fontWeight(FontWeight.Bold)
+                        .fontColor(Color.White)
+                        .textAlign(TextAlign.Center)
+                        .width(40).height(40)
+                        .backgroundColor(this.getDeviceColor(device.hostname))
+                        .borderRadius(20)
+                        .margin({ right: 12 });
 
-                    Column() {
-                      Text(device.hostname || '(未命名设备)')
-                        .fontSize(15).fontWeight(FontWeight.Bold)
-                        .lineHeight(20).maxLines(1)
-                        .textOverflow({ overflow: TextOverflow.Ellipsis });
-                      Text(device.mac)
-                        .fontSize(13).fontColor(COLOR_SECONDARY)
-                        .fontFamily('monospace').margin({ top: 2 });
+                      Column() {
+                        Text(device.hostname || '(未命名设备)')
+                          .fontSize(15).fontWeight(FontWeight.Bold)
+                          .lineHeight(20).maxLines(1)
+                          .textOverflow({ overflow: TextOverflow.Ellipsis });
+                        Text(device.mac)
+                          .fontSize(13).fontColor(COLOR_SECONDARY)
+                          .fontFamily('monospace').margin({ top: 2 });
+                      }
+                      .layoutWeight(1);
+
+                      // 状态指示灯用文本替代
+                      Text(this.isLeaseActive(device) ? '●' : '○')
+                        .fontSize(14)
+                        .fontColor(this.isLeaseActive(device) ? Color.Green : Color.Gray);
                     }
-                    .layoutWeight(1);
+                    .width('100%').margin({ bottom: 8 });
 
-                    // 状态指示灯用文本替代
-                    Text(this.isLeaseActive(device) ? '●' : '○')
-                      .fontSize(14)
-                      .fontColor(this.isLeaseActive(device) ? Color.Green : Color.Gray);
+                    Row() {
+                      Text(device.ip).fontSize(14).fontWeight(FontWeight.Medium).fontFamily('monospace');
+                      Text(this.formatExpiry(device.end))
+                        .fontSize(12)
+                        .fontColor(this.isLeaseActive(device) ? COLOR_SECONDARY : Color.Red);
+                    }
+                    .width('100%').justifyContent(FlexAlign.SpaceBetween);
                   }
-                  .width('100%').margin({ bottom: 8 });
-
-                  Row() {
-                    Text(device.ip).fontSize(14).fontWeight(FontWeight.Medium).fontFamily('monospace');
-                    Text(this.formatExpiry(device.end))
-                      .fontSize(12)
-                      .fontColor(this.isLeaseActive(device) ? COLOR_SECONDARY : Color.Red);
-                  }
-                  .width('100%').justifyContent(FlexAlign.SpaceBetween);
+                  .width('100%').padding(16).backgroundColor(COLOR_CARD_BG)
+                  .borderRadius(18).shadow(ShadowStyle.OUTER_DEFAULT_SM)
+                  .margin({ left: 16, right: 16, bottom: 10 });
                 }
-                .width('100%').padding(16).backgroundColor(COLOR_CARD_BG)
-                .borderRadius(18).shadow(ShadowStyle.OUTER_DEFAULT_SM)
-                .margin({ left: 16, right: 16, bottom: 10 });
-              }
-            }, (device: DhcpLease, index?: number) => {
-              return device.mac + device.ip;
-            });
+              }, (device: DhcpLease, index?: number) => {
+                return device.mac + device.ip;
+              });
+            }
+            .width('100%')
+            .height('100%')
+            .edgeEffect(EdgeEffect.Spring);
           }
-          .width('100%').layoutWeight(1).edgeEffect(EdgeEffect.Spring)
-          .onReachStart(() => this.refreshData());
+          .layoutWeight(1)
+          .width('100%')
+          .onRefreshing(() => {
+            this.refreshData();
+          });
         }
         .width('100%').height('100%');
       }

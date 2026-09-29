@@ -33,6 +33,7 @@ export struct OpenClashPage {
   @State private mode: string = '--';
   @State private clashPort: string = '--';
   @State private allowLan: boolean = false;
+  @State private isRefreshing: boolean = false;
 
   aboutToAppear(): void {
     this.loadAll();
@@ -40,9 +41,13 @@ export struct OpenClashPage {
 
   build() {
     Stack() {
-      Scroll() {
-        Column() {
-          // 状态卡片
+      // 下拉刷新用 Refresh 组件。
+      // 绝不要用 Scroll 的 onReachStart —— 初始就在顶部会立刻触发，
+      // 数据更新又引起重渲染，于是反复触发，形成无限刷新循环。
+      Refresh({ refreshing: this.isRefreshing }) {
+        Scroll() {
+          Column() {
+            // 状态卡片
           Column() {
             Row() {
               Circle()
@@ -105,10 +110,14 @@ export struct OpenClashPage {
           .backgroundColor(COLOR_CARD_BG).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM);
         }
         .width('100%').padding(16)
+        }
+        .width('100%').height('100%')
+        .edgeEffect(EdgeEffect.Spring)
       }
       .width('100%').height('100%')
-      .edgeEffect(EdgeEffect.Spring)
-      .onReachStart(() => this.loadAll());
+      .onRefreshing(() => {
+        this.refreshAll();
+      });
 
       if (this.isLoading) {
         LoadingProgress().width(32).height(32);
@@ -209,7 +218,15 @@ export struct OpenClashPage {
       this.errorMsg = '数据加载失败: ' + JSON.stringify(e);
     } finally {
       this.isLoading = false;
+      this.isRefreshing = false;
     }
+  }
+
+  /** 下拉刷新入口（带并发保护） */
+  private refreshAll(): void {
+    if (this.isRefreshing) return;
+    this.isRefreshing = true;
+    this.loadAll();
   }
 
   private async fetchClashInfo(): Promise<void> {

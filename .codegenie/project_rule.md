@@ -262,6 +262,49 @@ clashInfoRows() {
 - `promptAction.showToast` / `showDialog` 已废弃，但当前工程在用，暂时不强制改。
 - 对象字面量**不是**被禁止的；同文件里 `Record<string, string>` 字面量就在用。不要为了"规避"而到处 `JSON.parse`。
 
+### 4. ⚠️ 不要用 `onReachStart` 做「滚到顶部就刷新」
+
+`Scroll` / `List` 的 `onReachStart` **在列表初次渲染时就会触发**（初始位置本来就在顶部）。
+如果刷新回调会更新 `@State` 数据，就会引起重渲染 → 再次触发 → **无限刷新死循环**，
+把路由器打到冒烟（实测表现为设备页疯狂刷新）。
+
+**错误写法**：
+```typescript
+List() { ... }
+  .onReachStart(() => this.refreshData());   // ← 死循环
+```
+
+**正确写法**：用 `Refresh` 组件做下拉刷新：
+```typescript
+Refresh({ refreshing: this.isRefreshing }) {
+  List() { ... }
+    .width('100%').height('100%').edgeEffect(EdgeEffect.Spring)
+}
+.layoutWeight(1)
+.width('100%')
+.onRefreshing(() => { this.refreshData(); })
+```
+
+配套：`refreshData()` 里做并发保护，`loadXxx()` 的 `finally` 里复位：
+```typescript
+private refreshData(): void {
+  if (this.isRefreshing) return;
+  this.isRefreshing = true;
+  this.loadXxx();
+}
+// loadXxx 的 finally:
+//   this.isLoading = false;
+//   this.isRefreshing = false;
+```
+
+**曾经中招的页面**：`DevicesPage` / `NetworkPage` / `OpenClashPage`（已全部改成 `Refresh`）。
+
+### 5. 定时器参数单位是毫秒，别写错
+
+`setInterval(fn, ms)` 的第二个参数是**毫秒**。写 `1000` 是 1 秒而不是 30 秒。
+仪表盘一次刷新要发 3 个 ubus 请求（`system.board` + `system.info` + `luci-rpc.getDHCPLeases`），
+写成 1 秒等于把 256MB 的路由器当压力测试机。当前设为 `30000`（30 秒）。
+
 ---
 
 ## 八、构建 / 部署备忘

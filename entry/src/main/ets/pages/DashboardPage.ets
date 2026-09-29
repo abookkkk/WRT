@@ -14,7 +14,10 @@ const COLOR_GREEN: ResourceColor = '#4CAF50';
 const COLOR_ORANGE: ResourceColor = '#FF9800';
 const COLOR_RED: ResourceColor = '#F44336';
 // 自动刷新间隔（毫秒）
-const AUTO_REFRESH_INTERVAL_MS: number = 1000;
+// 注意：每次刷新要发 3 个 ubus 请求（system.board + system.info + luci-rpc.getDHCPLeases），
+// 原来写 1000（1 秒）等于每秒 3 次请求去轰炸一台 256MB 的路由器，太长不看也得改。
+// 30 秒足够体现 CPU/内存的变化，对路由器也友好。
+const AUTO_REFRESH_INTERVAL_MS: number = 30000;
 
 @Component
 export struct DashboardPage {
