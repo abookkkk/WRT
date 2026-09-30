@@ -353,7 +353,7 @@ export struct WifiPage {
       .width('100%').margin({ bottom: 10 });
 
       ForEach(radio.aps, (ap: ApItem) => {
-        this.apBlock(radio, ap);
+        this.apBlock(ap);
       }, (ap: ApItem) => ap.section + '#' + this.dataVersion)
 
       Button(this.scanning ? '扫描中...' : ('扫描 ' + radio.bandLabel + ' 周边 WiFi'))
@@ -372,7 +372,7 @@ export struct WifiPage {
   // ==================== 单个 SSID 区块 ====================
 
   @Builder
-  apBlock(radio: RadioItem, ap: ApItem) {
+  apBlock(ap: ApItem) {
     Column() {
       // --- 标题行：SSID + 启用开关 ---
       Row() {
@@ -396,11 +396,6 @@ export struct WifiPage {
       }
       .width('100%').margin({ bottom: 8 });
 
-      if (!ap.live) {
-        Text(radio.enabled ? '该 SSID 已被单独禁用，打开上面的开关即可启用'
-                           : '所属射频已关闭，打开射频开关后这个 SSID 才会生效')
-          .fontSize(11).fontColor(C_TEXT_3).width('100%').margin({ bottom: 8 });
-      }
 
       // --- SSID ---
       Text('WiFi 名称 (SSID)').fontSize(13).fontColor(C_TEXT_2).width('100%');
@@ -418,14 +413,11 @@ export struct WifiPage {
         .fontSize(14)
         .onChange((v: string) => { ap.password = v; });
 
-      // --- 绑定网络 ---
+      // --- 绑定网络 + 子网（紧凑两行）---
+      // 以前这里是「绑定网络」+「出口子网」两块、四五句 11px 小字，信息其实都在别处：
+      // 网络名在下拉里、子网在第二行、建独立子网的后果在确认框里 —— 所以只留必要的一行。
       Row() {
-        Column() {
-          Text('绑定网络 (network)').fontSize(13).fontColor(C_TEXT_2);
-          Text('决定这个 SSID 走哪个子网与防火墙区域')
-            .fontSize(11).fontColor(C_TEXT_3).margin({ top: 2 });
-        }
-        .alignItems(HorizontalAlign.Start).layoutWeight(1);
+        Text('绑定网络').fontSize(13).fontColor(C_TEXT_2).layoutWeight(1);
         Select(this.networkOptions())
           .selected(this.networkIndex(ap))
           .value(ap.network.length > 0 ? ap.network : '未绑定')
@@ -437,55 +429,35 @@ export struct WifiPage {
             }
           });
       }
-      .width('100%').margin({ top: 2, bottom: 10 });
+      .width('100%').alignItems(VerticalAlign.Center).margin({ top: 2, bottom: 6 });
 
-      // --- 出口子网（建/删独立网段，给"一 WiFi 一住宅 IP"打底）---
-      Column() {
-        Row() {
-          Column() {
-            Text(ap.dedicated ? '独立子网' : '与 lan 共用子网')
-              .fontSize(13).fontColor(C_TEXT_2);
-            Text((ap.network.length > 0 ? ap.network : '未绑定') +
-                 (ap.netSubnet.length > 0 ? ' · ' + ap.netSubnet : ''))
-              .fontSize(11).fontColor(C_TEXT_3).margin({ top: 2 });
-          }
-          .alignItems(HorizontalAlign.Start).layoutWeight(1);
-
-          Button(ap.dedicated ? '退回 lan' : '建独立子网')
-            .fontSize(12).height(30).type(ButtonType.Capsule)
-            .backgroundColor(ap.dedicated ? C_DANGER : C_PRIMARY)
-            .enabled(!this.busy && this.lanZoneSection.length > 0)
-            .onClick(() => {
-              if (ap.dedicated) {
-                this.confirmDeleteSubnet(ap);
-              } else {
-                this.confirmCreateSubnet(ap);
-              }
-            });
-        }
-        .width('100%');
-
-        Text(ap.dedicated
-          ? '该 SSID 已是独立网段：在 OpenClash / LuCI 里为 ' + ap.netSubnet +
-            ' 加一条 SRC-IP-CIDR 规则指向专用策略组，它就从那条住宅 IP 出去'
-          : '建独立子网会新建桥 + 静态接口 + DHCP，把该 SSID 换到 192.168.x.0/24 新网段（客户端需重连）')
-          .fontSize(11).fontColor(C_TEXT_3).width('100%').margin({ top: 4 }).lineHeight(16);
+      Row() {
+        Text(ap.netSubnet.length > 0 ? ('子网 ' + ap.netSubnet) : '未读到子网信息')
+          .fontSize(11).fontColor(C_TEXT_3).layoutWeight(1)
+          .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+        Button(ap.dedicated ? '退回 lan' : '建独立子网')
+          .fontSize(11).height(28).type(ButtonType.Capsule)
+          .backgroundColor(C_FILL)
+          .fontColor(ap.dedicated ? C_DANGER : C_PRIMARY)
+          .enabled(!this.busy && this.lanZoneSection.length > 0)
+          .onClick(() => {
+            if (ap.dedicated) {
+              this.confirmDeleteSubnet(ap);
+            } else {
+              this.confirmCreateSubnet(ap);
+            }
+          });
       }
-      .width('100%').margin({ top: 2, bottom: 10 })
+      .width('100%').alignItems(VerticalAlign.Center).margin({ bottom: 10 });
 
       // --- 隐藏 SSID ---
       Row() {
-        Column() {
-          Text('隐藏 WiFi 名称').fontSize(14);
-          Text('隐藏后新设备需要手动输入名称才能连接')
-            .fontSize(11).fontColor(C_TEXT_3).margin({ top: 2 });
-        }
-        .alignItems(HorizontalAlign.Start).layoutWeight(1);
+        Text('隐藏 WiFi 名称').fontSize(14).layoutWeight(1);
         Toggle({ type: ToggleType.Switch, isOn: ap.hidden })
           .enabled(!this.busy)
           .onChange((v: boolean) => { ap.hidden = v; });
       }
-      .width('100%').margin({ bottom: 10 });
+      .width('100%').alignItems(VerticalAlign.Center).margin({ bottom: 10 });
 
       // --- 操作按钮 ---
       Row() {
