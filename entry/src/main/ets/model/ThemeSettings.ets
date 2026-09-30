@@ -100,6 +100,9 @@ export class ThemeSettings {
     const contentColor: string = ThemeSettings.isDark(context, mode) ? '#E5FFFFFF' : '#E5000000';
     window.getLastWindow(context).then((win: window.Window) => {
       win.setWindowSystemBarProperties({
+        // 系统栏本身也要透明：内容（渐变背景）才能透上去，这才是沉浸式
+        statusBarColor: '#00000000',
+        navigationBarColor: '#00000000',
         statusBarContentColor: contentColor,
         navigationBarContentColor: contentColor
       });

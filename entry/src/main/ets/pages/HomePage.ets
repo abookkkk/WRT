@@ -28,7 +28,7 @@ import { OpenClashPage } from './OpenClashPage';
 import {
   C_PRIMARY, C_BG_TOP, C_BG_MID, C_BG_BOTTOM, C_TEXT_1, C_TEXT_2, C_TEXT_3, C_DANGER,
   C_FILL, C_BAR, C_DANGER_CHIP,
-  F_HERO, F_SECTION, F_CAPTION, F_TINY, ICON_L, ICON_M, SP_XS, SP_S, SP_M, SP_L, colorString
+  F_HERO, F_TITLE, F_SECTION, F_CAPTION, F_TINY, ICON_L, ICON_M, SP_XS, SP_S, SP_M, SP_L, colorString
 } from '../common/Theme';
 
 @Component
@@ -132,10 +132,13 @@ export struct HomePage {
           // ===== 顶部标题栏 =====
           Row() {
             Column() {
+              // 顶栏塞了 ⓘ / 外观 / 退出 三个按钮后，26 号的标题会被挤到换行 —— 降到 22 号刚好一行
               Text('OpenWrt 管理')
-                .fontSize(F_HERO)
+                .fontSize(F_TITLE)
                 .fontWeight(FontWeight.Bold)
-                .fontColor(C_TEXT_1);
+                .fontColor(C_TEXT_1)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis });
               Text('AX3000T · Filogic 820')
                 .fontSize(F_CAPTION)
                 .fontColor(C_TEXT_3)
@@ -187,7 +190,7 @@ export struct HomePage {
             .height(32)
             .type(ButtonType.Capsule)
             .backgroundColor(C_FILL)
-            .padding({ left: SP_M, right: SP_M })
+            .padding({ left: SP_S, right: SP_S })
             .margin({ right: SP_S })
             .onClick(() => this.cycleAppearance());
 
@@ -201,7 +204,11 @@ export struct HomePage {
           }
           .width('100%')
           .padding({ left: SP_L, right: SP_L, top: SP_S, bottom: SP_S })
-          .alignItems(VerticalAlign.Center);
+          .alignItems(VerticalAlign.Center)
+          // 顶栏做成「透明毛玻璃」：底色是调色板里的 c_bar（35% 不透明），
+          // 再叠一层超厚模糊 —— 内容滚到栏下时被虚化，文字照样看得清（鸿蒙原生那种观感）
+          .backgroundColor(C_BAR)
+          .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK);
 
           // ===== Tab 内容 =====
           Tabs({ barPosition: BarPosition.End }) {

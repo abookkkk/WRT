@@ -107,7 +107,7 @@ HarmonyOS **默认禁止明文 HTTP**。想连局域网里的 `http://192.168.x.
 |---|---|
 | **沉浸式布局** | `expandSafeArea` 让渐变背景延伸到状态栏 / 导航栏之后（只扩展背景，内容仍留在安全区内） |
 | **系统符号图标** | `SymbolGlyph($r('sys.symbol.xxx'))` —— 标签栏与表单图标全用系统符号：`house` / `rectangle_stack` / `wifi` / `person` / `bolt` / `lock` / `lock_fill` / `eye` / `eye_slash` |
-| **毛玻璃标签栏** | `Tabs.barBackgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)` + 半透明底色 |
+| **透明毛玻璃导航栏** | 顶部标题栏与底部标签栏都是「半透明底色（调色板 `c_bar`，35% 不透明）+ `BlurStyle.COMPONENT_ULTRA_THICK`」：内容滚到栏下会被虚化、文字仍清晰；系统状态栏 / 导航栏也显式设成透明（`statusBarColor`/`navigationBarColor` = `#00000000`），渐变背景能透上去 |
 | **渐变背景** | `linearGradient` 浅蓝 → 灰白 |
 | **玻璃拟态卡片** | 半透明白 `#F2FFFFFF` + 圆角 20 + `ShadowStyle.OUTER_DEFAULT_SM` |
 | **登录页** | 深蓝渐变头部 + 圆形半透明徽章 + 玻璃表单卡片；键盘「前往」键通过 `onSubmit` 直接提交登录 |
@@ -245,6 +245,10 @@ clashInfoRows() { Column() { Row() { Text('版本'); Text(this.version) } } }
       `releases.atom`（网页端点，不吃 API 限流）兜底拿版本号，并按发布惯例拼附件地址；
       ③ 鸿蒙普通应用**没有静默安装权限**（`bundle.installer` 是系统 API），且 HAP 未签名（真机要自己签名）——
       所以只能「下载 → 导出 → 手动装」，页面里写明了。实测：下载到 976,897 字节（与发布物一致）、「另存为」能拉起系统保存面板
+
+- [x] **上下两根导航栏改成透明毛玻璃** —— 顶部标题栏加 `c_bar`（35% 不透明）+ `BlurStyle.COMPONENT_ULTRA_THICK`，与底部标签栏同一套观感：
+      内容滚到栏下被虚化（实测滚动截图里卡片文字从栏后透出来、被模糊），系统状态栏 / 导航栏也显式设成透明让渐变透上去。
+      顺手修掉一个回归：顶栏加了 ⓘ 之后三个按钮把标题挤到换行（「OpenWrt 管 / 理」），标题字号 26 → 22 并限制单行
 
 ### 待办
 
