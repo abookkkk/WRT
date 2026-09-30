@@ -96,22 +96,45 @@ export class ThemeSettings {
    * 只同步系统栏图标颜色，不动色彩模式。
    * 系统深浅色变化（onConfigurationUpdate）时调用，避免和 setColorMode 互相触发。
    */
-  static refreshSystemBar(context: common.Context, mode: AppearanceMode): void {
-    const contentColor: string = ThemeSettings.isDark(context, mode) ? '#E5FFFFFF' : '#E5000000';
-    window.getLastWindow(context).then((win: window.Window) => {
-      // 全屏布局：页面内容从屏幕物理顶端开始铺（含状态栏 / 手势条区域），
-      // 这样卡片才能滚到状态栏后面 —— 华为图库那种观感。避让交给各页自己留白
-      //（HomePage 量好避让区后写进 AppStorage 的 safeTop / safeBottom）。
+  /**
+   * 一个窗口该做的两件事：全屏布局 + 系统栏（透明底 + 图标配色）。
+   *
+   * ⚠️ 必须等窗口**真正就绪**再调。实测在 `Ability.onCreate` 或 `loadContent` 之前调，
+   * 这两个 set 都会抛 **1300002（窗口状态异常）** —— 全屏于是根本没生效，
+   * 页面内容仍被安全区挡在状态栏之外（表现就是「改了跟没改一样」）。
+   */
+  static setupWindow(win: window.Window, context: common.Context, mode: AppearanceMode): void {
+    try {
       win.setWindowLayoutFullScreen(true);
+    } catch (e) {
+      console.error('[ThemeSettings] 设置全屏布局失败: ' + JSON.stringify(e));
+    }
+    const contentColor: string = ThemeSettings.isDark(context, mode) ? '#E5FFFFFF' : '#E5000000';
+    try {
       win.setWindowSystemBarProperties({
-        // 系统栏本身也要透明：内容（渐变背景）才能透上去，这才是沉浸式
+        // 系统栏本身也要透明：内容才能透上去，这才是沉浸式
         statusBarColor: '#00000000',
         navigationBarColor: '#00000000',
         statusBarContentColor: contentColor,
         navigationBarContentColor: contentColor
       });
-    }).catch((err: Object) => {
-      console.warn('[ThemeSettings] 设置系统栏配色失败: ' + JSON.stringify(err));
+    } catch (e) {
+      console.error('[ThemeSettings] 设置系统栏配色失败: ' + JSON.stringify(e));
+    }
+  }
+
+  /** 按 context 拿窗口再配置（外观切换时用；启动路径见 EntryAbility 的 loadContent 回调） */
+  static refreshSystemBar(context: common.Context, mode: AppearanceMode): void {
+    window.getLastWindow(context).then((win: window.Window) => {
+      ThemeSettings.setupWindow(win, context, mode);
+    }).catch((err: BusinessErrorLike) => {
+      // 启动早期（Ability.onCreate）还没窗口，这里会拿到 1300002；真正的配置
+      // 由 EntryAbility 在 loadContent 回调里做（见 setupWindow），所以这里只留一行 info
+      if (err.code === 1300002) {
+        console.info('[ThemeSettings] 窗口尚未就绪，系统栏配置交给 loadContent 回调');
+      } else {
+        console.warn('[ThemeSettings] 取窗口失败: ' + JSON.stringify(err));
+      }
     });
   }
 

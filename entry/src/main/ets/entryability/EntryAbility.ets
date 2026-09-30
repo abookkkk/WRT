@@ -41,13 +41,18 @@ export default class EntryAbility extends UIAbility {
   onWindowStageCreate(windowStage: window.WindowStage): void {
     hilog.info(DOMAIN, 'OpenWrtApp', 'onWindowStageCreate');
 
-    // 窗口到这一步才存在，补一次系统栏图标配色（onCreate 里调用会因为没有窗口而失败）
-    ThemeSettings.refreshSystemBar(this.context, ThemeSettings.load(this.context));
-
-    // 设置窗口布局
+    // ⚠️ 全屏布局 + 系统栏配置必须等**内容加载完**再做（实测时序很关键）：
+    // 在 onCreate 里、或 loadContent 之前调用，两个 set 都会抛 1300002（窗口状态异常），
+    // 全屏就不生效 —— 页面内容仍被安全区挡在状态栏之外，看起来「改了跟没改一样」。
     windowStage.loadContent('pages/Index', (err) => {
       if (err) {
         hilog.error(DOMAIN, 'OpenWrtApp', '加载首页失败: %{public}s', JSON.stringify(err));
+      }
+      try {
+        ThemeSettings.setupWindow(windowStage.getMainWindowSync(), this.context, ThemeSettings.load(this.context));
+        hilog.info(DOMAIN, 'OpenWrtApp', '已应用全屏布局 + 系统栏配色');
+      } catch (e) {
+        hilog.error(DOMAIN, 'OpenWrtApp', '应用窗口配置失败: %{public}s', JSON.stringify(e));
       }
     });
   }

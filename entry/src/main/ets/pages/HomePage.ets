@@ -66,6 +66,11 @@ export struct HomePage {
 
   aboutToAppear(): void {
     this.measureInsets();
+    // 全屏布局是在 EntryAbility 的 loadContent 回调里切的，可能晚于本页 aboutToAppear ——
+    // 稍后再量一次避让区（值变了 @StorageProp 会让各页自动重排）
+    setTimeout(() => {
+      this.measureInsets();
+    }, 600);
     // 启动时 EntryAbility 已经应用过外观，这里读一次只为让按钮显示正确的状态
     try {
       const ctx = getContext(this) as common.UIAbilityContext;
