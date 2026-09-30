@@ -38,7 +38,7 @@
 | 目标设备 | 手机为主，兼容平板 |
 | SDK | HarmonyOS 6.1.1 (API 24)，targetSdkVersion / compatibleSdkVersion 都是 6.1.1(24) |
 | 工程路径 | E:\HarmonyNext\Code\OpenWrt |
-| 工程状态 | 已有完整工程，5 个 Tab 页：仪表盘 / 网络接口 / 无线 / 在线设备 / OpenClash；应用名「OpenWrt 管理」（分层图标，源自 OpenWrt logo） |
+| 工程状态 | 已有完整工程，4 个 Tab 页：仪表盘 / 网络接口 / 无线 / OpenClash，外加 1 个二级页面「在线设备」（从仪表盘卡片进入，见第七节第 11 条）；应用名「OpenWrt 管理」（分层图标，源自 OpenWrt logo） |
 | bundleName | com.example.myapplication |
 
 ---
@@ -462,7 +462,7 @@ List() { ... }
 ### 10. ⚠️ 页面刷新只有一种方式：下拉刷新（统一规范）
 
 **策略的唯一来源是 `entry/src/main/ets/common/RefreshPolicy.ets`** —— 要改刷新行为就改那里。
-五个 Tab 页（含已冻结的 OpenClash 页）必须完全一致：
+四个 Tab 页 + 二级页面「在线设备」（含已冻结的 OpenClash 页）必须完全一致：
 
 | `LoadKind` | 谁在用 | 屏幕上的表现 | 失败时 |
 |---|---|---|---|
@@ -509,6 +509,29 @@ private onPullRefresh(): void {
    且 `Refresh` 的直接子节点必须是可滚动容器（`Scroll` / `List`）。
 5. 盖在列表上面的空状态层要写 `.hitTestBehavior(HitTestMode.None)`，否则会把下拉手势吞掉。
 6. 写配置期间（`busy`）用 `.pullToRefresh(!this.busy)` 关掉下拉，避免边写边刷。
+
+### 11. ⚠️ 二级页面（在 App 内推入的新页面）用 Navigation，不要加 Tab、也不要用 router
+
+**现状**：「在线设备」是仪表盘的二级页面 —— 点仪表盘「在线设备」卡片 →
+`HomePage.openDevices()` → `pathStack.pushPathByName('devices', null)` →
+`Navigation.navDestination(this.pageMap)` → `devicesDestination()` 里的 `NavDestination`。
+
+要点（都踩过）：
+
+1. `Navigation` 包在 `HomePage.build()` 最外层，`.mode(NavigationMode.Stack)` + `.hideTitleBar(true)`
+   （标题栏自己画，才能跟 App 的渐变/深色主题一致）。推入的 `NavDestination` **会整页盖住标签栏**，
+   这正是"二级页面"该有的样子；系统返回键、侧滑返回、转场动画都由框架负责，不用自己处理。
+2. `navDestination(builder)` 的回调**只给页面名**（`(name: string, param: unknown)`），
+   所以要在 `@Builder pageMap(name: string)` 里按 name 分发。
+3. 标签栏被盖住后**没有别的东西铺背景**：`NavDestination` 里要自己铺一层渐变
+   `.expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])`，
+   否则状态栏/手势条区域会露出窗口底色。
+4. 自定义组件（struct）**不能链式加通用属性**（`DevicesPage(...).layoutWeight(1)` 编译不过），
+   要用一个 `Column() { DevicesPage(...) }.layoutWeight(1)` 包一层。
+5. 页面组件与宿主解耦：二级页需要的数据/回调由宿主通过构造参数传
+   （`DashboardPage({ client, onOpenDevices: () => this.openDevices() })`）；
+   回调属性**不要写 `private`**，否则会多一条 ArkTS 警告。
+6. 不要用 `@ohos.router`：它只能传可序列化参数，`OpenWrtClient` 这种对象传不过去。
 
 ---
 

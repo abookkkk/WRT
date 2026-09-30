@@ -15,7 +15,7 @@
 - **网络接口** —— 每个接口的协议、运行时长、IPv4/IPv6、网关、DNS、DHCP 服务器/租期、MTU、链路速率、MAC、桥接成员；累计流量与包数，以及**每 3 秒刷新的实时速率**（页面不可见时自动暂停采样）
 - **无线网络（多 SSID）** —— 每个射频下列出**全部** SSID（含射频关闭时配置里仍存在的），逐个可改：WiFi 名称、密码、隐藏、**绑定 network**、单独启用/禁用，以及**新增 / 删除 SSID**；射频级开关、**信道 / 频宽 / 发射功率**选择；每个 SSID 的已连接设备（信号强度、收发流量、在线时长）与一键断开；周边 WiFi 扫描
 - **出口映射** —— SSID → network → 子网 → zone → 命中的 Clash `SRC-IP-CIDR` 策略组 → 该组当前节点；没有单独规则的 SSID 会明确标出「未单独分流，跟默认策略组」，并提示与哪些 SSID 共用了同一 network
-- **在线设备** —— DHCP 租约列表（主机名、MAC、IP、剩余租期）
+- **在线设备（二级页面）** —— 从仪表盘的「在线设备」卡片点进去（底部导航栏已没有该 Tab）：DHCP 租约列表（主机名、MAC、IP、剩余租期），支持下拉刷新，带返回按钮与系统返回键
 - **OpenClash**（🧊 **已冻结，不再迭代**）—— 运行状态、内核版本、运行模式、HTTP 端口、是否允许局域网；**策略组与节点切换**（含各节点延迟）；一键重启。
   其它页面可以只读复用它的数据（无线页的「出口映射」就是这么读 `SRC-IP-CIDR` 规则与策略组当前节点的），但不再改动本页、也不新增 Clash 功能
 - **深色模式** —— 顶部「跟随系统 / 深色 / 浅色」三态按钮，点一下循环切换并本地记住；选「跟随系统」时系统切深浅色，App 立即跟着变（含状态栏/导航栏图标配色）
@@ -146,11 +146,11 @@ entry/src/main/
     └── pages/
         ├── Index.ets                # 入口：未登录→LoginPage，已登录→HomePage
         ├── LoginPage.ets            # 登录页
-        ├── HomePage.ets             # Tabs 容器（5 个 Tab）
+        ├── HomePage.ets             # Tabs 容器（4 个 Tab）+ 二级页面栈（Navigation / NavDestination）
         ├── DashboardPage.ets        # 仪表盘
         ├── NetworkPage.ets          # 网络接口
         ├── WifiPage.ets             # 无线网络（射频开关 / SSID / 密码 / 隐藏 / 客户端踢出 / 扫描）
-        ├── DevicesPage.ets          # 在线设备
+        ├── DevicesPage.ets          # 在线设备（二级页面，从仪表盘卡片进入）
         └── OpenClashPage.ets        # OpenClash
 ```
 
@@ -215,6 +215,9 @@ clashInfoRows() { Column() { Row() { Text('版本'); Text(this.version) } } }
       现在统一为：**只有下拉刷新一种手势**（页面里的刷新按钮全部删掉），下拉只切 `isRefreshing`（顶部指示器、内容不重建），
       失败按三档反馈（首屏 → 错误页 / 下拉 → 保留数据 + 提示 / 静默 → 只写日志），策略集中在 `common/RefreshPolicy.ets`，
       规范写进 `.codegenie/project_rule.md` 第七节第 10 条；写配置期间用 `.pullToRefresh(!this.busy)` 关掉下拉
+
+- [x] **在线设备改成仪表盘的二级页面** —— 原来它占一个底部 Tab，现在从仪表盘「在线设备」卡片点进（卡片右侧有 `›` 提示），
+      用 `Navigation` + `NavPathStack` + `NavDestination` 实现：整页盖住标签栏、自绘标题栏与返回按钮、系统返回键与侧滑返回由框架处理
 
 ### 待办
 

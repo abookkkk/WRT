@@ -37,9 +37,9 @@ export struct DevicesPage {
         Column() {
           // 统计头部
           Row() {
-            Text('在线设备').fontSize(16).fontWeight(FontWeight.Bold);
-            Text(`${this.activeCount} 台`).fontSize(14).fontColor(COLOR_PRIMARY).margin({ left: 8 });
-            Text(`共 ${this.devices.length} 个租约`).fontSize(12).fontColor(COLOR_SECONDARY).margin({ left: 4 });
+            Text(`${this.activeCount} 台在线`)
+              .fontSize(16).fontWeight(FontWeight.Bold).fontColor(COLOR_PRIMARY);
+            Text(`共 ${this.devices.length} 个租约`).fontSize(12).fontColor(COLOR_SECONDARY).margin({ left: 8 });
           }
           .width('100%').padding({ left: 16, right: 16, top: 12, bottom: 4 });
 

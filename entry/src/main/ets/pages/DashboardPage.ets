@@ -41,6 +41,8 @@ class RatePoint {
 @Component
 export struct DashboardPage {
   private client!: OpenWrtClient;
+  /** 点「在线设备」卡片 → 打开二级页面（由 HomePage 传入） */
+  onOpenDevices: () => void = () => {};
 
   @State private isLoading: boolean = true;
   @State private deviceModel: string = '--';
@@ -234,13 +236,25 @@ export struct DashboardPage {
 
               // 卡片 4：在线设备
               Column() {
-                Text('在线设备').fontSize(16).fontWeight(FontWeight.Bold).width('100%');
+                Row() {
+                  Text('在线设备').fontSize(16).fontWeight(FontWeight.Bold).layoutWeight(1);
+                  // 右侧箭头表示"点得进去"：点开是二级页面（HomePage.devicesDestination）
+                  SymbolGlyph($r('sys.symbol.chevron_right'))
+                    .fontSize(ICON_S)
+                    .fontColor([C_TEXT_3])
+                    .renderingStrategy(SymbolRenderingStrategy.SINGLE);
+                }
+                .width('100%')
+                .alignItems(VerticalAlign.Center);
+
                 Text(String(this.onlineDevices))
                   .fontSize(40).fontWeight(FontWeight.Bold)
                   .fontColor(this.onlineDevices > 0 ? COLOR_PRIMARY : C_TEXT_1);
-                Text('台设备在线').fontSize(14).fontColor(COLOR_SECONDARY).margin({ top: 4 });
+                Text('台设备在线 · 点开看完整列表')
+                  .fontSize(14).fontColor(COLOR_SECONDARY).margin({ top: 4 });
               }
-              .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
+              .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 })
+              .onClick(() => this.onOpenDevices());
             }
             .width('100%').padding(16)
           }
