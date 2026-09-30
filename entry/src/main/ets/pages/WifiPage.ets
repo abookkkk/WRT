@@ -90,7 +90,7 @@ class RadioItem {
   htModes: string[] = [];
   txPowers: number[] = [];
   aps: ApItem[] = [];
-  /** 射频关闭时是否手动展开下面的配置（默认收起，避免整页杂乱） */
+  /** 这张射频卡是否展开。默认"射频开着就展开、关着就收起"，用户点「展开 / 收起」可以改，改完记住 */
   expanded: boolean = false;
 }
 
@@ -139,6 +139,8 @@ export struct WifiPage {
   @State private scanning: boolean = false;
   /** 每次加载自增，用来强制 ForEach 重建（ArkUI 复用条目时不会刷新属性） */
   @State private dataVersion: number = 0;
+  /** 用户手动折 / 展过的射频（section → 是否展开）。loadData 每次都重建 RadioItem，靠它把用户的选择还原 */
+  private expandedOverride: Record<string, boolean> = {};
 
   aboutToAppear(): void {
     this.loadData();
@@ -340,32 +342,28 @@ export struct WifiPage {
           .backgroundColor(radio.enabled ? C_SUCCESS : C_TEXT_3)
           .borderRadius(9)
           .margin({ right: 8 });
+        // 2.4G / 5G 都有这个按钮：开着的射频也能折起来，要不要看细节由用户决定
+        Button(radio.expanded ? '收起' : '展开')
+          .fontSize(12).height(28).type(ButtonType.Capsule)
+          .backgroundColor(C_FILL)
+          .fontColor(C_PRIMARY)
+          .enabled(!this.busy)
+          .margin({ right: 8 })
+          .onClick(() => this.toggleRadioExpanded(radio));
         Toggle({ type: ToggleType.Switch, isOn: radio.enabled })
           .enabled(!this.busy)
           .onChange((v: boolean) => this.toggleRadio(radio, v));
       }
       .width('100%').margin({ bottom: 12 });
 
-      // --- 射频关闭时收起下面的配置，避免整页看着杂乱；要改就点「展开」 ---
-      if (!radio.enabled) {
-        Row() {
-          Text('该射频已关闭，已收起信道 / 频宽 / 发射功率与 ' + String(radio.aps.length) + ' 个 SSID 的配置')
-            .fontSize(11).fontColor(C_TEXT_3).layoutWeight(1).lineHeight(16);
-          Button(radio.expanded ? '收起' : '展开')
-            .fontSize(12).height(28).type(ButtonType.Capsule)
-            .backgroundColor(C_FILL)
-            .fontColor(C_PRIMARY)
-            .enabled(!this.busy)
-            .onClick(() => {
-              radio.expanded = !radio.expanded;
-              this.dataVersion = this.dataVersion + 1;
-            });
-        }
-        .width('100%').alignItems(VerticalAlign.Center);
+      // --- 收起时给一行摘要，说明收起来的是什么（要改就点右上角的「展开」）---
+      if (!radio.expanded) {
+        Text(this.radioCollapsedHint(radio))
+          .fontSize(11).fontColor(C_TEXT_3).width('100%').lineHeight(16);
       }
 
-      // 射频开着、或关闭后手动展开时，才铺下面的配置
-      if (radio.enabled || radio.expanded) {
+      // 只有展开时才铺下面的配置；射频关着也能展开看清楚，不再由开关状态强行决定
+      if (radio.expanded) {
 
       // --- 运行时状态 ---
       this.infoLine('当前信道', radio.liveChannel > 0 ? String(radio.liveChannel) : '--');
@@ -725,6 +723,9 @@ export struct WifiPage {
         item.radioName = dev.section;
         item.bandLabel = this.bandLabel(dev.band);
         item.enabled = !dev.disabled;
+        // 默认：射频开着就展开、关着就收起；用户手动切过的按他切的来（loadData 会重建对象，得还原）
+        const rememberedExpand: boolean | undefined = this.expandedOverride[dev.section];
+        item.expanded = rememberedExpand === undefined ? item.enabled : rememberedExpand;
         item.configChannel = dev.channel.length > 0 ? dev.channel : 'auto';
         item.configHtMode = dev.htmode;
         item.configTxPower = dev.txpower;
@@ -982,6 +983,29 @@ export struct WifiPage {
     } finally {
       this.busy = false;
     }
+  }
+
+  /** 折 / 展一个射频卡片，并记住用户的选择（下次 loadData 不会被重置） */
+  private toggleRadioExpanded(radio: RadioItem): void {
+    radio.expanded = !radio.expanded;
+    this.expandedOverride[radio.radioName] = radio.expanded;
+    // 对象是原地改的，ArkUI 检测不到；bump 版本号让 ForEach 重建这张卡
+    this.dataVersion = this.dataVersion + 1;
+  }
+
+  /** 射频卡片收起时的一行摘要：说清楚被收起来的是什么 */
+  private radioCollapsedHint(radio: RadioItem): string {
+    if (!radio.enabled) {
+      return '该射频已关闭，已收起信道 / 频宽 / 发射功率与 ' + String(radio.aps.length) + ' 个 SSID 的配置';
+    }
+    let hint: string = '已收起 ' + String(radio.aps.length) + ' 个 SSID 与射频设置';
+    if (radio.liveChannel > 0) {
+      hint = hint + ' · 当前信道 ' + String(radio.liveChannel);
+    }
+    if (radio.txpowerDbm > 0) {
+      hint = hint + ' · ' + String(radio.txpowerDbm) + ' dBm';
+    }
+    return hint;
   }
 
   /** 保存该射频的信道 / 频宽 / 发射功率 */

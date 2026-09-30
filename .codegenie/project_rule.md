@@ -459,6 +459,12 @@ List() { ... }
 **发射功率**：`iwinfo.txpowerlist`（本机 0~23 dBm，`active` 标当前值）可枚举，
 写 `wireless.<radio>.txpower`；选「自动」就 `uci delete` 掉该项，回到驱动默认。
 
+**射频卡的折 / 展状态**：`RadioItem` 每次 `loadData()` 都重建，展开状态只存在对象里的话，
+刷新一次（含写完配置后等 6 秒的那次重载）就会弹回默认。所以页面里另存一份
+`expandedOverride: Record<section, boolean>`，`loadData` 时按它还原；默认值是
+「射频开着就展开、关着就收起」（2.4G / 5G 两张卡都有「展开 / 收起」按钮）。
+切换时别忘 `dataVersion + 1` —— `@Builder` 值传递参数不会触发刷新。
+
 ### 10. ⚠️ 页面刷新只有一种方式：下拉刷新（统一规范）
 
 **策略的唯一来源是 `entry/src/main/ets/common/RefreshPolicy.ets`** —— 要改刷新行为就改那里。
