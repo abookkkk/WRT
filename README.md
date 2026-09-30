@@ -19,6 +19,7 @@
 - **OpenClash**（🧊 **已冻结，不再迭代**）—— 运行状态、内核版本、运行模式、HTTP 端口、是否允许局域网；**策略组与节点切换**（含各节点延迟）；一键重启。
   其它页面可以只读复用它的数据（无线页的「出口映射」就是这么读 `SRC-IP-CIDR` 规则与策略组当前节点的），但不再改动本页、也不新增 Clash 功能
 - **深色模式** —— 顶部「跟随系统 / 深色 / 浅色」三态按钮，点一下循环切换并本地记住；选「跟随系统」时系统切深浅色，App 立即跟着变（含状态栏/导航栏图标配色）
+- **统一的刷新方式** —— 五个 Tab 页只有**下拉刷新**一种手势（页面里不再有「刷新」按钮）：下拉时只显示顶部指示器、页面内容不重建；刷新失败保留屏幕上已有的数据并提示，只有首屏失败才整页换成错误页 + 重试
 
 ---
 
@@ -134,7 +135,8 @@ entry/src/main/
 │   └── network_config.json          # 明文 HTTP 白名单
 └── ets/
     ├── common/
-    │   └── Theme.ets                # 设计令牌（颜色引用 / 圆角 / 间距 / 字号）+ Canvas/弹窗取色函数
+    │   ├── Theme.ets                # 设计令牌（颜色引用 / 圆角 / 间距 / 字号）+ Canvas/弹窗取色函数
+    │   └── RefreshPolicy.ets        # 统一下拉刷新策略（LoadKind 三档 + 失败反馈），五个 Tab 页共用
     ├── model/
     │   ├── OpenWrtClient.ets        # ubus JSON-RPC 客户端（核心，全部网络调用都在这）
     │   ├── OpenWrtModels.ets        # 数据模型 / 接口定义
@@ -209,6 +211,11 @@ clashInfoRows() { Column() { Row() { Text('版本'); Text(this.version) } } }
       现在两种失败形态分开处理：客户端识别 -32002 后回调上层，清本地 session → 回登录页并提示
       「登录已过期，请重新登录」；回到前台时还会主动打一次轻量校验，切后台放超时就当场退回
 
+- [x] **统一的刷新方式** —— 原来五个 Tab 页各一套：无线页 / 仪表盘靠按钮刷新，设备页 / 网络页虽然能下拉但会把整页置为 loading（列表连同 `Refresh` 一起被卸载重建，退化成「整页转圈」），仪表盘的静默刷新失败还会整页切错误页、丢掉已有数据。
+      现在统一为：**只有下拉刷新一种手势**（页面里的刷新按钮全部删掉），下拉只切 `isRefreshing`（顶部指示器、内容不重建），
+      失败按三档反馈（首屏 → 错误页 / 下拉 → 保留数据 + 提示 / 静默 → 只写日志），策略集中在 `common/RefreshPolicy.ets`，
+      规范写进 `.codegenie/project_rule.md` 第七节第 10 条；写配置期间用 `.pullToRefresh(!this.busy)` 关掉下拉
+
 ### 待办
 
 - [ ] **App 无法代写「按源 IP 分流」的 Clash 规则**（实测 `file.write` 被 ACL 拒绝，连 `/tmp` 都不行；OpenClash 的自定义规则文件 `file.read` 也拒绝）。
@@ -217,4 +224,3 @@ clashInfoRows() { Column() { Row() { Text('版本'); Text(this.version) } } }
 - [ ] 暂未做路由器重启按钮（`system.reboot` 已可用）
 - [ ] `bundleName` 还是默认的 `com.example.myapplication`，正式发布前需要改
 - [ ] `OpenWrtClient` 用字符串拼接构造 JSON（`session.login`、`setWifiOption`）：密码 / SSID 里含 `"` 或 `\` 时请求体会坏掉，应改用 `JSON.stringify`
-- [ ] 设备页 / 网络页的下拉刷新会把整页置为 loading，列表连同 `Refresh` 一起被卸载重建，体验退化成「整页转圈」；仪表盘静默刷新失败时也会整体切到错误页、丢掉已有数据

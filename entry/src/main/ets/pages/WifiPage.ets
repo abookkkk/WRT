@@ -40,6 +40,8 @@ import {
   C_PRIMARY, C_SUCCESS, C_WARNING, C_DANGER, C_TEXT_1, C_TEXT_2, C_TEXT_3, C_CARD, C_FILL,
   colorString
 } from '../common/Theme';
+import { shouldShowErrorPage, shouldToast, notifyLoadFailed } from '../common/RefreshPolicy';
+import type { LoadKind } from '../common/RefreshPolicy';
 
 /** 页面用的客户端条目 */
 class ClientItem {
@@ -129,6 +131,8 @@ export struct WifiPage {
   @State private scanHint: string = '';
   @State private scanFor: string = '';
   @State private isLoading: boolean = true;
+  /** 下拉刷新中：只驱动 Refresh 的顶部指示器，不参与整页 Loading */
+  @State private isRefreshing: boolean = false;
   @State private hasError: boolean = false;
   @State private errorMsg: string = '';
   @State private busy: boolean = false;
@@ -137,84 +141,89 @@ export struct WifiPage {
   @State private dataVersion: number = 0;
 
   aboutToAppear(): void {
-    this.loadAll();
+    this.loadData();
   }
 
   build() {
     Stack() {
+      // 统一刷新（规范见 common/RefreshPolicy.ets）：下拉刷新是全局唯一手势，
+      // 可滚动内容整体放在 Refresh 里，指示器永远出现在页面内容最上方；
+      // 写配置（busy）期间禁用下拉，避免边写边刷。
       if (!this.isLoading && !this.hasError) {
-        Scroll() {
-          Column() {
-            // ===== 顶部 =====
-            Row() {
-              Text('无线网络').fontSize(17).fontWeight(FontWeight.Bold).layoutWeight(1);
-              Button('刷新')
-                .fontSize(14).height(32).type(ButtonType.Capsule)
-                .enabled(!this.busy)
-                .onClick(() => this.loadAll());
-            }
-            .width('100%').margin({ bottom: 12 });
+        Refresh({ refreshing: this.isRefreshing }) {
+          Scroll() {
+            Column() {
+              // ===== 顶部 =====
+              // 这里原本有个「刷新」按钮，已按统一规范去掉：刷新只有下拉一种方式
+              Text('无线网络')
+                .fontSize(17).fontWeight(FontWeight.Bold)
+                .width('100%').margin({ bottom: 12 });
 
-            // ===== 出口映射 =====
-            this.mappingCard();
+              // ===== 出口映射 =====
+              this.mappingCard();
 
-            // ===== 每个射频一张卡（卡内含该射频下所有 SSID） =====
-            ForEach(this.radios, (radio: RadioItem) => {
-              this.radioCard(radio);
-            }, (radio: RadioItem) => radio.radioName + '#' + this.dataVersion)
+              // ===== 每个射频一张卡（卡内含该射频下所有 SSID） =====
+              ForEach(this.radios, (radio: RadioItem) => {
+                this.radioCard(radio);
+              }, (radio: RadioItem) => radio.radioName + '#' + this.dataVersion)
 
-            // ===== 扫描结果 =====
-            if (this.scanResult.length > 0 || this.scanHint.length > 0) {
-              Column() {
-                Text('周边 WiFi（' + this.scanFor + '）')
-                  .fontSize(15).fontWeight(FontWeight.Bold).width('100%').margin({ bottom: 8 });
+              // ===== 扫描结果 =====
+              if (this.scanResult.length > 0 || this.scanHint.length > 0) {
+                Column() {
+                  Text('周边 WiFi（' + this.scanFor + '）')
+                    .fontSize(15).fontWeight(FontWeight.Bold).width('100%').margin({ bottom: 8 });
 
-                if (this.scanHint.length > 0) {
-                  Text(this.scanHint)
-                    .fontSize(12).fontColor(C_WARNING).width('100%').lineHeight(18);
-                }
-
-                ForEach(this.scanResult, (s: ScanItem) => {
-                  Row() {
-                    Text(s.ssid.length > 0 ? s.ssid : '(隐藏网络)')
-                      .fontSize(13).layoutWeight(1).maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis });
-                    Text('信道 ' + s.channel).fontSize(12).fontColor(C_TEXT_2).margin({ right: 10 });
-                    Text(String(s.signal) + ' dBm')
-                      .fontSize(12)
-                      .fontColor(s.signal > -60 ? C_SUCCESS : (s.signal > -75 ? C_WARNING : C_TEXT_3));
+                  if (this.scanHint.length > 0) {
+                    Text(this.scanHint)
+                      .fontSize(12).fontColor(C_WARNING).width('100%').lineHeight(18);
                   }
-                  .width('100%').padding({ top: 6, bottom: 6 })
-                }, (s: ScanItem) => s.bssid);
+
+                  ForEach(this.scanResult, (s: ScanItem) => {
+                    Row() {
+                      Text(s.ssid.length > 0 ? s.ssid : '(隐藏网络)')
+                        .fontSize(13).layoutWeight(1).maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis });
+                      Text('信道 ' + s.channel).fontSize(12).fontColor(C_TEXT_2).margin({ right: 10 });
+                      Text(String(s.signal) + ' dBm')
+                        .fontSize(12)
+                        .fontColor(s.signal > -60 ? C_SUCCESS : (s.signal > -75 ? C_WARNING : C_TEXT_3));
+                    }
+                    .width('100%').padding({ top: 6, bottom: 6 })
+                  }, (s: ScanItem) => s.bssid);
+                }
+                .width('100%').padding(16)
+                .backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM)
+                .margin({ bottom: 12 });
+              }
+
+              // ===== 说明 =====
+              Column() {
+                Text('说明').fontSize(15).fontWeight(FontWeight.Bold).width('100%').margin({ bottom: 8 });
+                Text('· SSID 列表来自路由器的 uci 配置，射频关闭时也能看到并编辑')
+                  .fontSize(12).fontColor(C_TEXT_3).margin({ bottom: 4 });
+                Text('· 保存走 uci commit + rc.init network reload，实测不会断开已有连接')
+                  .fontSize(12).fontColor(C_TEXT_3).margin({ bottom: 4 });
+                Text('· 新增/删除 SSID 会改配置并重载无线，操作前请确认')
+                  .fontSize(12).fontColor(C_TEXT_3).margin({ bottom: 4 });
+                Text('· 出口看 Clash 的 SRC-IP-CIDR 规则；没有该规则的 SSID 会跟默认策略组')
+                  .fontSize(12).fontColor(C_TEXT_3).margin({ bottom: 4 });
+                Text('· 分流规则要在 OpenClash / LuCI 里配：App 只能读规则，写不了（file.write 被 ACL 拒绝）')
+                  .fontSize(12).fontColor(C_TEXT_3).margin({ bottom: 4 });
+                Text('· 断开设备用 hostapd.<接口>.del_client，不拉黑，客户端可立即重连')
+                  .fontSize(12).fontColor(C_TEXT_3);
               }
               .width('100%').padding(16)
-              .backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM)
-              .margin({ bottom: 12 });
-            }
-
-            // ===== 说明 =====
-            Column() {
-              Text('说明').fontSize(15).fontWeight(FontWeight.Bold).width('100%').margin({ bottom: 8 });
-              Text('· SSID 列表来自路由器的 uci 配置，射频关闭时也能看到并编辑')
-                .fontSize(12).fontColor(C_TEXT_3).margin({ bottom: 4 });
-              Text('· 保存走 uci commit + rc.init network reload，实测不会断开已有连接')
-                .fontSize(12).fontColor(C_TEXT_3).margin({ bottom: 4 });
-              Text('· 新增/删除 SSID 会改配置并重载无线，操作前请确认')
-                .fontSize(12).fontColor(C_TEXT_3).margin({ bottom: 4 });
-              Text('· 出口看 Clash 的 SRC-IP-CIDR 规则；没有该规则的 SSID 会跟默认策略组')
-                .fontSize(12).fontColor(C_TEXT_3).margin({ bottom: 4 });
-              Text('· 分流规则要在 OpenClash / LuCI 里配：App 只能读规则，写不了（file.write 被 ACL 拒绝）')
-                .fontSize(12).fontColor(C_TEXT_3).margin({ bottom: 4 });
-              Text('· 断开设备用 hostapd.<接口>.del_client，不拉黑，客户端可立即重连')
-                .fontSize(12).fontColor(C_TEXT_3);
+              .backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM);
             }
             .width('100%').padding(16)
-            .backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM);
           }
-          .width('100%').padding(16)
+          .width('100%').height('100%')
+          .edgeEffect(EdgeEffect.Spring)
         }
-        .width('100%').height('100%')
-        .edgeEffect(EdgeEffect.Spring)
+        .width('100%')
+        .height('100%')
+        .onRefreshing(() => this.onPullRefresh())
+        .pullToRefresh(!this.busy);
       }
 
       if (this.isLoading) {
@@ -230,7 +239,7 @@ export struct WifiPage {
           Text('⚠️').fontSize(40);
           Text(this.errorMsg).fontSize(14).margin({ top: 12 });
           Button('重试').type(ButtonType.Capsule).margin({ top: 16 })
-            .onClick(() => this.loadAll());
+            .onClick(() => this.loadData());
         }
         .width('100%').height('100%').justifyContent(FlexAlign.Center);
       }
@@ -645,23 +654,25 @@ export struct WifiPage {
 
   // ==================== 数据加载 ====================
 
-  private async loadAll(): Promise<void> {
-    if (!this.client.isLoggedIn()) {
-      this.hasError = true;
-      this.errorMsg = '未登录';
-      this.isLoading = false;
-      return;
+  /**
+   * 加载无线配置 —— 本页唯一的取数入口（刷新规范见 common/RefreshPolicy.ets）。
+   * kind 决定 Loading 与失败反馈：'first' 首屏 / 'pull' 下拉刷新 / 'quiet' 写完配置后的重载。
+   */
+  private async loadData(kind: LoadKind = 'first'): Promise<void> {
+    if (kind === 'first') {
+      this.isLoading = true;
     }
 
-    this.isLoading = true;
-    this.hasError = false;
-
     try {
+      if (!this.client.isLoggedIn()) {
+        this.failLoad('未登录', kind);
+        return;
+      }
+
       // 1) 配置态：射频 + 全部 SSID（权威数据源）
       const cfg: WifiConfig = await this.client.getWifiConfig();
       if (cfg.devices.length === 0) {
-        this.hasError = true;
-        this.errorMsg = '读取无线配置失败（uci wireless 读不到 wifi-device）';
+        this.failLoad('读取无线配置失败（uci wireless 读不到 wifi-device）', kind);
         return;
       }
 
@@ -825,12 +836,35 @@ export struct WifiPage {
       this.mapping = rows;
       this.mappingNote = clashNote;
       this.dataVersion = this.dataVersion + 1;
+      // 成功就清掉错误页：停在错误页时，一次下拉刷新也能把它救回来
+      this.hasError = false;
     } catch (e) {
-      this.hasError = true;
-      this.errorMsg = '加载异常: ' + JSON.stringify(e);
+      this.failLoad('加载异常: ' + JSON.stringify(e), kind);
     } finally {
       this.isLoading = false;
+      this.isRefreshing = false;
     }
+  }
+
+  /**
+   * 统一的失败处理，三档反馈（规范见 common/RefreshPolicy.ets）：
+   * 首屏失败 → 错误页；下拉刷新失败 → 保留已有数据 + 提示；静默刷新失败 → 只写日志。
+   */
+  private failLoad(msg: string, kind: LoadKind): void {
+    console.error('[Wifi] ' + msg);
+    if (shouldShowErrorPage(kind)) {
+      this.hasError = true;
+      this.errorMsg = msg;
+    } else if (shouldToast(kind)) {
+      notifyLoadFailed(msg);
+    }
+  }
+
+  /** 下拉刷新的统一入口：挂给 Refresh 的 onRefreshing */
+  private onPullRefresh(): void {
+    if (this.isRefreshing) return;
+    this.isRefreshing = true;
+    this.loadData('pull');
   }
 
   /** SRC-IP-CIDR 规则条数 */
@@ -1197,7 +1231,8 @@ export struct WifiPage {
     await this.client.applyWifi();
     await this.client.reloadService('dnsmasq');
     await this.sleep(6000);
-    await this.loadAll();
+    // 写完配置后的重载走 'quiet'：不显示 Loading、失败也不弹提示（写操作的提示已经给过了）
+    await this.loadData('quiet');
   }
 
   /** commit + 应用 + 重新加载 */
@@ -1214,7 +1249,7 @@ export struct WifiPage {
       return;
     }
     await this.sleep(6000);
-    await this.loadAll();
+    await this.loadData('quiet');
     this.toast('已生效');
   }
 
@@ -1230,7 +1265,7 @@ export struct WifiPage {
       if (r.success) {
         this.toast('已断开 ' + c.mac);
         await this.sleep(2000);
-        await this.loadAll();
+        await this.loadData('quiet');
       } else {
         this.toast('断开失败: ' + (r.error || '未知错误'));
       }

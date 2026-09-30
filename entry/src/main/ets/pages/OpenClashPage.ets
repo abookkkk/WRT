@@ -20,6 +20,8 @@
 
 import { promptAction } from '@kit.ArkUI';
 import { OpenWrtClient } from '../model/OpenWrtClient';
+import { shouldShowErrorPage, shouldToast, notifyLoadFailed } from '../common/RefreshPolicy';
+import type { LoadKind } from '../common/RefreshPolicy';
 import type { OpenClashSettings, ClashGroup } from '../model/OpenWrtModels';
 import {
   C_PRIMARY, C_SUCCESS, C_WARNING, C_DANGER, C_TEXT_1, C_TEXT_2, C_TEXT_3,
@@ -78,12 +80,13 @@ export struct OpenClashPage {
   @State private switchingHint: string = '';
 
   aboutToAppear(): void {
-    this.loadAll();
+    this.loadData();
   }
 
   build() {
     Stack() {
-      // 下拉刷新用 Refresh 组件。
+      // 下拉刷新用 Refresh 组件 —— 这是全 App 唯一的刷新手势（规范见 common/RefreshPolicy.ets）。
+      // 下拉只切 isRefreshing（顶部指示器），不切 isLoading，所以内容不会被卸载重建。
       // 绝不要用 Scroll 的 onReachStart —— 初始就在顶部会立刻触发，
       // 数据更新又引起重渲染，于是反复触发，形成无限刷新循环。
       Refresh({ refreshing: this.isRefreshing }) {
@@ -104,9 +107,7 @@ export struct OpenClashPage {
       }
       .width('100%')
       .height('100%')
-      .onRefreshing(() => {
-        this.refreshAll();
-      });
+      .onRefreshing(() => this.onPullRefresh());
 
       if (this.isLoading) {
         LoadingProgress().width(32).height(32);
@@ -116,7 +117,7 @@ export struct OpenClashPage {
           Text('⚠️').fontSize(40);
           Text(this.errorMsg).fontSize(F_BODY).margin({ top: SP_M });
           Button('重试').type(ButtonType.Capsule).margin({ top: SP_L })
-            .onClick(() => this.loadAll());
+            .onClick(() => this.loadData());
         }
       }
     }
@@ -371,18 +372,21 @@ export struct OpenClashPage {
 
   // ==================== 数据加载 ====================
 
-  private async loadAll(): Promise<void> {
-    if (!this.client.isLoggedIn()) {
-      this.hasError = true;
-      this.errorMsg = '未登录';
-      this.isLoading = false;
-      return;
+  /**
+   * 加载 OpenClash 状态 —— 本页唯一的取数入口（刷新规范见 common/RefreshPolicy.ets）。
+   * ⚠️ 本页已冻结：这里只是把刷新机制对齐到全 App 的统一规范，没有新增任何 Clash 功能。
+   */
+  private async loadData(kind: LoadKind = 'first'): Promise<void> {
+    if (kind === 'first') {
+      this.isLoading = true;
     }
 
-    this.isLoading = true;
-    this.hasError = false;
-
     try {
+      if (!this.client.isLoggedIn()) {
+        this.failLoad('未登录', kind);
+        return;
+      }
+
       // 1) 进程状态：用 rc.list（直接给 running / enabled）
       const state = await this.client.getServiceState('openclash');
       this.isRunning = state !== null && state.running === true;
@@ -418,20 +422,35 @@ export struct OpenClashPage {
         }
       }
       this.dataVersion = this.dataVersion + 1;
+      // 成功就清掉错误页：停在错误页时，一次下拉刷新也能把它救回来
+      this.hasError = false;
     } catch (e) {
-      this.hasError = true;
-      this.errorMsg = '数据加载失败: ' + JSON.stringify(e);
+      this.failLoad('数据加载失败: ' + JSON.stringify(e), kind);
     } finally {
       this.isLoading = false;
       this.isRefreshing = false;
     }
   }
 
-  /** 下拉刷新入口（带并发保护） */
-  private refreshAll(): void {
+  /**
+   * 统一的失败处理，三档反馈（规范见 common/RefreshPolicy.ets）：
+   * 首屏失败 → 错误页；下拉刷新失败 → 保留已有数据 + 提示；静默刷新失败 → 只写日志。
+   */
+  private failLoad(msg: string, kind: LoadKind): void {
+    console.error('[OpenClash] ' + msg);
+    if (shouldShowErrorPage(kind)) {
+      this.hasError = true;
+      this.errorMsg = msg;
+    } else if (shouldToast(kind)) {
+      notifyLoadFailed(msg);
+    }
+  }
+
+  /** 下拉刷新的统一入口：挂给 Refresh 的 onRefreshing（带并发保护） */
+  private onPullRefresh(): void {
     if (this.isRefreshing) return;
     this.isRefreshing = true;
-    this.loadAll();
+    this.loadData('pull');
   }
 
   // ==================== 操作 ====================
@@ -452,7 +471,8 @@ export struct OpenClashPage {
       if (ok) {
         promptAction.showToast({ message: '已切换到 ' + node, duration: 2000 });
         await this.sleep(600);
-        await this.loadAll();
+        // 操作后的重载走 'quiet'：不显示 Loading，失败也不弹提示（操作本身的提示已经给过了）
+        await this.loadData('quiet');
         this.switchingHint = '';
       } else {
         this.switchingHint = '';
@@ -508,7 +528,7 @@ export struct OpenClashPage {
       }
       // OpenClash 重启要几秒，等一下再回来读状态
       await this.sleep(8000);
-      await this.loadAll();
+      await this.loadData('quiet');
       promptAction.showToast({ message: '模式已切换', duration: 2000 });
     } catch (e) {
       promptAction.showToast({ message: '切换异常: ' + JSON.stringify(e), duration: 2500 });
@@ -540,7 +560,7 @@ export struct OpenClashPage {
       const result = await this.client.restartService('openclash');
       if (result.success) {
         await this.sleep(8000);
-        await this.loadAll();
+        await this.loadData('quiet');
         promptAction.showToast({ message: '已重启', duration: 2000 });
       } else {
         promptAction.showToast({ message: '重启失败: ' + (result.error || '未知错误'), duration: 2500 });

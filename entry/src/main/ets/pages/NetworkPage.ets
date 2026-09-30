@@ -9,7 +9,6 @@
  * 这部分已经在 OpenWrtClient.getNetworkInterfaces() 里合并好了。
  */
 
-import { promptAction } from '@kit.ArkUI';
 import { OpenWrtClient } from '../model/OpenWrtClient';
 import type { NetworkInterface, NetAddress, NetDeviceStats } from '../model/OpenWrtModels';
 import {
@@ -18,6 +17,8 @@ import {
   F_SECTION, F_BODY, F_CAPTION, F_TINY,
   R_CARD, R_CHIP, SP_S, SP_M, SP_L, SP_XL, ICON_S
 } from '../common/Theme';
+import { shouldShowErrorPage, shouldToast, notifyLoadFailed } from '../common/RefreshPolicy';
+import type { LoadKind } from '../common/RefreshPolicy';
 
 const COLOR_CARD_BG: ResourceColor = C_CARD;
 
@@ -51,7 +52,7 @@ export struct NetworkPage {
   private prevStamp: number = 0;
 
   aboutToAppear(): void {
-    this.loadNetworkData();
+    this.loadData();
     this.startRateSampler();
   }
 
@@ -62,7 +63,8 @@ export struct NetworkPage {
   build() {
     Stack() {
       if (!this.isLoading && !this.hasError) {
-        // 下拉刷新用 Refresh 组件。
+        // 下拉刷新用 Refresh 组件 —— 这是全 App 唯一的刷新手势（规范见 common/RefreshPolicy.ets）。
+        // 下拉只切 isRefreshing（顶部指示器），不切 isLoading，所以内容不会被卸载重建。
         // 绝不要用 Scroll/List 的 onReachStart —— 列表初始就在顶部会立刻触发，
         // 数据更新又引起重渲染，于是反复触发，形成无限刷新循环。
         Refresh({ refreshing: this.isRefreshing }) {
@@ -83,9 +85,7 @@ export struct NetworkPage {
         }
         .width('100%')
         .height('100%')
-        .onRefreshing(() => {
-          this.refreshData();
-        })
+        .onRefreshing(() => this.onPullRefresh())
       }
 
       if (this.isLoading) {
@@ -97,7 +97,7 @@ export struct NetworkPage {
           Text('⚠️').fontSize(40);
           Text(this.errorMsg).fontSize(F_BODY).margin({ top: SP_M });
           Button('重试').type(ButtonType.Capsule).margin({ top: SP_L })
-            .onClick(() => this.loadNetworkData());
+            .onClick(() => this.loadData());
         }
       }
     }
@@ -323,18 +323,21 @@ export struct NetworkPage {
 
   // ==================== 数据加载 ====================
 
-  private async loadNetworkData(): Promise<void> {
-    if (!this.client.isLoggedIn()) {
-      this.hasError = true;
-      this.errorMsg = '未登录';
-      this.isLoading = false;
-      return;
+  /**
+   * 加载接口与流量 —— 本页唯一的取数入口（刷新规范见 common/RefreshPolicy.ets）。
+   * kind 决定 Loading 与失败反馈：'first' 首屏 / 'pull' 下拉刷新。
+   */
+  private async loadData(kind: LoadKind = 'first'): Promise<void> {
+    if (kind === 'first') {
+      this.isLoading = true;
     }
 
-    this.isLoading = true;
-    this.hasError = false;
-
     try {
+      if (!this.client.isLoggedIn()) {
+        this.failLoad('未登录', kind);
+        return;
+      }
+
       // 这个方法内部会 dump 一次 + 对每个 l3_device 查一次 device status（拿流量）
       const result = await this.client.getNetworkInterfaces();
 
@@ -346,24 +349,38 @@ export struct NetworkPage {
         });
         this.interfaces = list;
         this.dataVersion = this.dataVersion + 1;
+        // 成功就清掉错误页：停在错误页时，一次下拉刷新也能把它救回来
+        this.hasError = false;
       } else {
-        this.hasError = true;
-        this.errorMsg = result.error || '获取接口数据失败';
+        this.failLoad(result.error || '获取接口数据失败', kind);
       }
     } catch (e) {
-      this.hasError = true;
-      this.errorMsg = '请求异常: ' + JSON.stringify(e);
+      this.failLoad('请求异常: ' + JSON.stringify(e), kind);
     } finally {
       this.isLoading = false;
       this.isRefreshing = false;
     }
   }
 
-  private refreshData(): void {
+  /**
+   * 统一的失败处理，三档反馈（规范见 common/RefreshPolicy.ets）：
+   * 首屏失败 → 错误页；下拉刷新失败 → 保留已有数据 + 提示；静默刷新失败 → 只写日志。
+   */
+  private failLoad(msg: string, kind: LoadKind): void {
+    console.error('[Network] ' + msg);
+    if (shouldShowErrorPage(kind)) {
+      this.hasError = true;
+      this.errorMsg = msg;
+    } else if (shouldToast(kind)) {
+      notifyLoadFailed(msg);
+    }
+  }
+
+  /** 下拉刷新的统一入口：挂给 Refresh 的 onRefreshing（不再弹「正在刷新…」，指示器本身就是反馈） */
+  private onPullRefresh(): void {
     if (this.isRefreshing) return;
     this.isRefreshing = true;
-    promptAction.showToast({ message: '正在刷新...', duration: 800 });
-    this.loadNetworkData();
+    this.loadData('pull');
   }
 
   // ==================== 实时速率采样 ====================

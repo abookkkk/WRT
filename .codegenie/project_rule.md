@@ -204,6 +204,10 @@ OpenWrt 的 rpcd 有 ACL。**很多看起来理所当然的方法实际会被拒
 > 唯一例外是**只读复用**：其它页面（如无线页的「出口映射」）可以调用已有的
 > `getOpenClashSettings()` / `getClashRules()` / `getClashGroups()` 读数据，但不要去改这些方法本身。
 > 下面这些实测结论保留，供理解现状用。
+>
+> **唯一的一次例外（2026-09-30，用户同意）**：把本页的**刷新机制**对齐到全 App 统一规范
+> （见第七节第 10 条）—— `loadAll()` 改名 `loadData(kind)`、下拉刷新不再切 `isLoading`、
+> 失败不再整页切错误页。**只动了刷新，没碰任何 Clash 逻辑、界面与文案。**
 
 OpenClash **没有自己的 ubus 对象**，走这三条路：
 
@@ -354,17 +358,8 @@ Refresh({ refreshing: this.isRefreshing }) {
 .onRefreshing(() => { this.refreshData(); })
 ```
 
-配套：`refreshData()` 里做并发保护，`loadXxx()` 的 `finally` 里复位：
-```typescript
-private refreshData(): void {
-  if (this.isRefreshing) return;
-  this.isRefreshing = true;
-  this.loadXxx();
-}
-// loadXxx 的 finally:
-//   this.isLoading = false;
-//   this.isRefreshing = false;
-```
+**接法（全 App 统一，见下面第 10 条）**：`onRefreshing` 里调 `onPullRefresh()`，
+它只切 `isRefreshing` 然后 `loadData('pull')` —— **不要**再把 `isLoading` 拉起来。
 
 **曾经中招的页面**：`DevicesPage` / `NetworkPage` / `OpenClashPage`（已全部改成 `Refresh`）。
 
@@ -463,6 +458,57 @@ List() { ... }
 
 **发射功率**：`iwinfo.txpowerlist`（本机 0~23 dBm，`active` 标当前值）可枚举，
 写 `wireless.<radio>.txpower`；选「自动」就 `uci delete` 掉该项，回到驱动默认。
+
+### 10. ⚠️ 页面刷新只有一种方式：下拉刷新（统一规范）
+
+**策略的唯一来源是 `entry/src/main/ets/common/RefreshPolicy.ets`** —— 要改刷新行为就改那里。
+五个 Tab 页（含已冻结的 OpenClash 页）必须完全一致：
+
+| `LoadKind` | 谁在用 | 屏幕上的表现 | 失败时 |
+|---|---|---|---|
+| `'first'` | `aboutToAppear` / 错误页的「重试」 | 整页 `LoadingProgress` | 切错误页（带「重试」按钮） |
+| `'pull'` | `Refresh.onRefreshing` | 只有顶部下拉指示器 | **保留已有数据** + toast 提示 |
+| `'quiet'` | 定时器 / 写完配置后的重新加载 | 什么都不显示 | 保留已有数据，只写日志 |
+
+每页固定两个入口，不要再各写一套：
+
+```typescript
+private async loadData(kind: LoadKind = 'first'): Promise<void> {
+  if (kind === 'first') { this.isLoading = true; }   // 只有首屏才切整页 Loading
+  try {
+    // ...取数据...
+    this.hasError = false;                           // 成功就清错误页：静默刷新也能把错误页救回来
+  } catch (e) {
+    this.failLoad('加载异常: ' + JSON.stringify(e), kind);
+  } finally {
+    this.isLoading = false;
+    this.isRefreshing = false;
+  }
+}
+
+private failLoad(msg: string, kind: LoadKind): void {
+  console.error('[页面名] ' + msg);
+  if (shouldShowErrorPage(kind)) { this.hasError = true; this.errorMsg = msg; }
+  else if (shouldToast(kind)) { notifyLoadFailed(msg); }
+}
+
+private onPullRefresh(): void {
+  if (this.isRefreshing) return;
+  this.isRefreshing = true;
+  this.loadData('pull');
+}
+```
+
+几条硬性要求：
+
+1. **页面里不再放「刷新」按钮**（原来无线页头部的、仪表盘底部的都已删掉），刷新手势只有下拉一种。
+2. 下拉必须**只切 `isRefreshing`**。一旦顺手写上 `isLoading = true`，`if (!isLoading)` 那整段内容会被卸载重建，
+   退化成「整页转圈」，下拉指示器也会一起消失。
+3. `'pull'` / `'quiet'` 失败**绝不能** `hasError = true`：那会把用户正在看的数据整页换成错误页。
+4. 下拉指示器要落在**页面内容最上方**：可滚动内容（含标题 / 统计行）整体放进 `Refresh` 里，
+   且 `Refresh` 的直接子节点必须是可滚动容器（`Scroll` / `List`）。
+5. 盖在列表上面的空状态层要写 `.hitTestBehavior(HitTestMode.None)`，否则会把下拉手势吞掉。
+6. 写配置期间（`busy`）用 `.pullToRefresh(!this.busy)` 关掉下拉，避免边写边刷。
 
 ---
 

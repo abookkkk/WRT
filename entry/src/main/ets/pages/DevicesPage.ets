@@ -4,10 +4,11 @@
  * 展示路由器的 DHCP 租约列表。
  */
 
-import { promptAction } from '@kit.ArkUI';
 import { OpenWrtClient } from '../model/OpenWrtClient';
 import type { DhcpLease } from '../model/OpenWrtModels';
 import { C_PRIMARY, C_SUCCESS, C_DANGER, C_TEXT_2, C_TEXT_3, C_CARD } from '../common/Theme';
+import { shouldShowErrorPage, shouldToast, notifyLoadFailed } from '../common/RefreshPolicy';
+import type { LoadKind } from '../common/RefreshPolicy';
 
 // 颜色统一走 Theme 里的资源（浅色/深色两套自动切换）
 const COLOR_CARD_BG: ResourceColor = C_CARD;
@@ -27,7 +28,7 @@ export struct DevicesPage {
   @State private activeCount: number = 0;
 
   aboutToAppear(): void {
-    this.loadDevices();
+    this.loadData();
   }
 
   build() {
@@ -42,7 +43,7 @@ export struct DevicesPage {
           }
           .width('100%').padding({ left: 16, right: 16, top: 12, bottom: 4 });
 
-          // 下拉刷新用 Refresh 组件。
+          // 下拉刷新用 Refresh 组件 —— 这是全 App 唯一的刷新手势（规范见 common/RefreshPolicy.ets）。
           // 千万不要用 List 的 onReachStart —— 它在列表初次渲染（本来就在顶部）时就会触发，
           // 加载完数据又引起重渲染，于是再次触发，形成无限刷新循环。
           Refresh({ refreshing: this.isRefreshing }) {
@@ -109,20 +110,21 @@ export struct DevicesPage {
           }
           .layoutWeight(1)
           .width('100%')
-          .onRefreshing(() => {
-            this.refreshData();
-          });
+          .onRefreshing(() => this.onPullRefresh());
         }
         .width('100%').height('100%');
       }
 
+      // 空状态是盖在列表上面的一层：不能吞掉触摸事件，
+      // 否则租约为 0 时下拉刷新会被这层挡住（HitTestMode.None 让手势透到下面的 Refresh）
       if (!this.isLoading && !this.hasError && this.devices.length === 0) {
         Column() {
           Text('📡').fontSize(48);
           Text('未找到 DHCP 租约').fontSize(16).fontColor(COLOR_SECONDARY).margin({ top: 12 });
           Text('请确保路由器开启了 DHCP 服务器').fontSize(13).fontColor(COLOR_TERTIARY).margin({ top: 4 });
         }
-        .width('100%').height('100%').justifyContent(FlexAlign.Center);
+        .width('100%').height('100%').justifyContent(FlexAlign.Center)
+        .hitTestBehavior(HitTestMode.None);
       }
 
       if (this.isLoading) {
@@ -133,7 +135,7 @@ export struct DevicesPage {
           Text('⚠️').fontSize(40);
           Text(this.errorMsg).fontSize(14).margin({ top: 12 });
           Button('重试').type(ButtonType.Capsule).margin({ top: 16 })
-            .onClick(() => this.loadDevices());
+            .onClick(() => this.loadData());
         }
       }
     }
@@ -142,40 +144,58 @@ export struct DevicesPage {
 
   // ==================== 数据加载 ====================
 
-  private async loadDevices(): Promise<void> {
-    if (!this.client.isLoggedIn()) {
-      this.hasError = true;
-      this.errorMsg = '未登录';
-      this.isLoading = false;
-      return;
+  /**
+   * 加载 DHCP 租约 —— 本页唯一的取数入口（刷新规范见 common/RefreshPolicy.ets）。
+   * kind 决定 Loading 与失败反馈：'first' 首屏 / 'pull' 下拉刷新。
+   */
+  private async loadData(kind: LoadKind = 'first'): Promise<void> {
+    if (kind === 'first') {
+      this.isLoading = true;
     }
 
-    this.isLoading = true;
-    this.hasError = false;
-
     try {
+      if (!this.client.isLoggedIn()) {
+        this.failLoad('未登录', kind);
+        return;
+      }
+
       const result = await this.client.getDhcpLeases();
       if (result.success && result.data) {
         this.devices = result.data;
         const now: number = Math.floor(Date.now() / 1000);
         this.activeCount = result.data.filter((d: DhcpLease) => d.end > now).length;
+        // 成功就清掉错误页：停在错误页时，一次下拉刷新也能把它救回来
+        this.hasError = false;
       } else {
-        this.hasError = true;
-        this.errorMsg = result.error || '获取租约数据失败';
+        this.failLoad(result.error || '获取租约数据失败', kind);
       }
     } catch (e) {
-      this.hasError = true;
-      this.errorMsg = '请求异常: ' + JSON.stringify(e);
+      this.failLoad('请求异常: ' + JSON.stringify(e), kind);
     } finally {
       this.isLoading = false;
       this.isRefreshing = false;
     }
   }
 
-  private refreshData(): void {
+  /**
+   * 统一的失败处理，三档反馈（规范见 common/RefreshPolicy.ets）：
+   * 首屏失败 → 错误页；下拉刷新失败 → 保留已有数据 + 提示；静默刷新失败 → 只写日志。
+   */
+  private failLoad(msg: string, kind: LoadKind): void {
+    console.error('[Devices] ' + msg);
+    if (shouldShowErrorPage(kind)) {
+      this.hasError = true;
+      this.errorMsg = msg;
+    } else if (shouldToast(kind)) {
+      notifyLoadFailed(msg);
+    }
+  }
+
+  /** 下拉刷新的统一入口：挂给 Refresh 的 onRefreshing */
+  private onPullRefresh(): void {
     if (this.isRefreshing) return;
     this.isRefreshing = true;
-    this.loadDevices();
+    this.loadData('pull');
   }
 
   private isLeaseActive(device: DhcpLease): boolean {

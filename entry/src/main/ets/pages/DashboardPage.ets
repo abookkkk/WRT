@@ -4,7 +4,6 @@
  * 展示路由器关键状态信息。
  */
 
-import { promptAction } from '@kit.ArkUI';
 import { OpenWrtClient } from '../model/OpenWrtClient';
 import type { SystemBoard, SystemInfo, NetDeviceStats } from '../model/OpenWrtModels';
 import {
@@ -13,6 +12,8 @@ import {
   F_SECTION, F_TINY, R_CARD, SP_S, SP_M, SP_XL, ICON_S,
   colorString, colorRgba
 } from '../common/Theme';
+import { shouldShowErrorPage, shouldToast, notifyLoadFailed } from '../common/RefreshPolicy';
+import type { LoadKind } from '../common/RefreshPolicy';
 
 // 颜色统一走 Theme 里的资源（浅色/深色两套自动切换），页面内不再写死色值
 const COLOR_PRIMARY: ResourceColor = C_PRIMARY;
@@ -57,6 +58,8 @@ export struct DashboardPage {
   @State private onlineDevices: number = 0;
   @State private hasError: boolean = false;
   @State private errorMsg: string = '';
+  /** 下拉刷新中：只驱动 Refresh 的顶部指示器，不参与整页 Loading */
+  @State private isRefreshing: boolean = false;
   private refreshTimer: number = -1;
 
   // ---- 实时网速 ----
@@ -84,7 +87,7 @@ export struct DashboardPage {
   private canvasCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.canvasSettings);
 
   aboutToAppear(): void {
-    this.loadAllData();
+    this.loadData();
     this.startAutoRefresh();
     this.initUplink();
     this.startRateSampler();
@@ -98,155 +101,156 @@ export struct DashboardPage {
   build() {
     Stack() {
       // 主内容区域
+      // 统一刷新（规范见 common/RefreshPolicy.ets）：下拉刷新是全局唯一手势，
+      // 可滚动内容整体放在 Refresh 里，指示器永远出现在页面内容最上方。
       if (!this.isLoading && !this.hasError) {
-        Scroll() {
-          Column() {
-            // ===== 卡片 0：实时网速 + 60 秒趋势图 =====
+        Refresh({ refreshing: this.isRefreshing }) {
+          Scroll() {
             Column() {
-              Row() {
-                Text('实时网速')
-                  .fontSize(F_SECTION)
-                  .fontWeight(FontWeight.Bold)
-                  .fontColor(C_TEXT_1)
-                  .layoutWeight(1);
-                Text(this.wanDevice.length > 0 ? ('WAN · ' + this.wanDevice) : 'WAN')
+              // ===== 卡片 0：实时网速 + 60 秒趋势图 =====
+              Column() {
+                Row() {
+                  Text('实时网速')
+                    .fontSize(F_SECTION)
+                    .fontWeight(FontWeight.Bold)
+                    .fontColor(C_TEXT_1)
+                    .layoutWeight(1);
+                  Text(this.wanDevice.length > 0 ? ('WAN · ' + this.wanDevice) : 'WAN')
+                    .fontSize(F_TINY)
+                    .fontColor(C_TEXT_3)
+                    .fontFamily('monospace');
+                }
+                .width('100%')
+                .alignItems(VerticalAlign.Center)
+                .margin({ bottom: SP_M });
+
+                Row() {
+                  // 下行
+                  Column() {
+                    Row() {
+                      SymbolGlyph($r('sys.symbol.arrow_down'))
+                        .fontSize(ICON_S)
+                        .fontColor([C_SUCCESS])
+                        .renderingStrategy(SymbolRenderingStrategy.SINGLE);
+                      Text('接收').fontSize(F_TINY).fontColor(C_TEXT_2).margin({ left: 4 });
+                    }
+                    .alignItems(VerticalAlign.Center);
+
+                    Text(this.rateReady ? this.formatRate(this.wanRxRate) : '--')
+                      .fontSize(24)
+                      .fontWeight(FontWeight.Bold)
+                      .fontColor(C_TEXT_1)
+                      .margin({ top: 2 });
+
+                    Text('峰值 ' + this.rxPeakLabel)
+                      .fontSize(10)
+                      .fontColor(C_SUCCESS)
+                      .margin({ top: 1 });
+                  }
+                  .layoutWeight(1)
+                  .alignItems(HorizontalAlign.Start);
+
+                  // 上行
+                  Column() {
+                    Row() {
+                      SymbolGlyph($r('sys.symbol.arrow_up'))
+                        .fontSize(ICON_S)
+                        .fontColor([C_WARNING])
+                        .renderingStrategy(SymbolRenderingStrategy.SINGLE);
+                      Text('发送').fontSize(F_TINY).fontColor(C_TEXT_2).margin({ left: 4 });
+                    }
+                    .alignItems(VerticalAlign.Center);
+
+                    Text(this.rateReady ? this.formatRate(this.wanTxRate) : '--')
+                      .fontSize(24)
+                      .fontWeight(FontWeight.Bold)
+                      .fontColor(C_TEXT_1)
+                      .margin({ top: 2 });
+
+                    Text('峰值 ' + this.txPeakLabel)
+                      .fontSize(10)
+                      .fontColor(C_WARNING)
+                      .margin({ top: 1 });
+                  }
+                  .layoutWeight(1)
+                  .alignItems(HorizontalAlign.Start);
+                }
+                .width('100%');
+
+                // 趋势图（Canvas 手绘，见 drawChart()）
+                Canvas(this.canvasCtx)
+                  .width('100%')
+                  .height(76)
+                  .margin({ top: SP_M })
+                  .onReady(() => {
+                    this.drawChart();
+                  });
+
+                Text('最近 60 秒 · 每 2 秒采样 · 上下行各自独立刻度')
                   .fontSize(F_TINY)
                   .fontColor(C_TEXT_3)
-                  .fontFamily('monospace');
+                  .width('100%')
+                  .margin({ top: 2 });
               }
-              .width('100%')
-              .alignItems(VerticalAlign.Center)
-              .margin({ bottom: SP_M });
+              .width('100%').padding(SP_XL).backgroundColor(C_CARD)
+              .borderRadius(R_CARD).shadow(ShadowStyle.OUTER_DEFAULT_SM)
+              .margin({ bottom: 14 });
 
-              Row() {
-                // 下行
-                Column() {
-                  Row() {
-                    SymbolGlyph($r('sys.symbol.arrow_down'))
-                      .fontSize(ICON_S)
-                      .fontColor([C_SUCCESS])
-                      .renderingStrategy(SymbolRenderingStrategy.SINGLE);
-                    Text('接收').fontSize(F_TINY).fontColor(C_TEXT_2).margin({ left: 4 });
-                  }
-                  .alignItems(VerticalAlign.Center);
+              // 卡片 1：路由器信息
+              Column() {
+                Text('路由器信息').fontSize(16).fontWeight(FontWeight.Bold).width('100%');
+                this.routerInfoRows();
+              }
+              .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
 
-                  Text(this.rateReady ? this.formatRate(this.wanRxRate) : '--')
-                    .fontSize(24)
-                    .fontWeight(FontWeight.Bold)
-                    .fontColor(C_TEXT_1)
-                    .margin({ top: 2 });
+              // 卡片 2：运行状态
+              Column() {
+                Text('运行状态').fontSize(16).fontWeight(FontWeight.Bold).width('100%');
+                this.runStatusRows();
+              }
+              .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
 
-                  Text('峰值 ' + this.rxPeakLabel)
-                    .fontSize(10)
-                    .fontColor(C_SUCCESS)
-                    .margin({ top: 1 });
+              // 卡片 3：内存使用率
+              Column() {
+                Text('内存使用率').fontSize(16).fontWeight(FontWeight.Bold).width('100%').margin({ bottom: 12 });
+                Row() {
+                  Text(this.memoryUsed).fontSize(20).fontWeight(FontWeight.Bold);
+                  Text(`/ ${this.memoryTotal}`).fontSize(14).fontColor(COLOR_SECONDARY).margin({ left: 4 });
                 }
-                .layoutWeight(1)
-                .alignItems(HorizontalAlign.Start);
+                Progress({ value: this.memoryPercent, total: 100, type: ProgressType.Linear })
+                  .width('100%').height(8).borderRadius(4)
+                  .color(this.memoryPercent < 50 ? COLOR_GREEN : (this.memoryPercent < 80 ? COLOR_ORANGE : COLOR_RED));
+                Text(`${this.memoryPercent}%`)
+                  .fontSize(12).fontColor(COLOR_SECONDARY).width('100%').textAlign(TextAlign.End).margin({ top: 4 });
 
-                // 上行
-                Column() {
-                  Row() {
-                    SymbolGlyph($r('sys.symbol.arrow_up'))
-                      .fontSize(ICON_S)
-                      .fontColor([C_WARNING])
-                      .renderingStrategy(SymbolRenderingStrategy.SINGLE);
-                    Text('发送').fontSize(F_TINY).fontColor(C_TEXT_2).margin({ left: 4 });
-                  }
-                  .alignItems(VerticalAlign.Center);
-
-                  Text(this.rateReady ? this.formatRate(this.wanTxRate) : '--')
-                    .fontSize(24)
-                    .fontWeight(FontWeight.Bold)
-                    .fontColor(C_TEXT_1)
-                    .margin({ top: 2 });
-
-                  Text('峰值 ' + this.txPeakLabel)
-                    .fontSize(10)
-                    .fontColor(C_WARNING)
-                    .margin({ top: 1 });
+                Row() {
+                  Text('可用').fontSize(12).fontColor(COLOR_SECONDARY);
+                  Blank();
+                  Text(this.memoryAvailable).fontSize(12).fontColor(COLOR_SECONDARY);
                 }
-                .layoutWeight(1)
-                .alignItems(HorizontalAlign.Start);
+                .width('100%').margin({ top: 6 });
               }
-              .width('100%');
+              .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
 
-              // 趋势图（Canvas 手绘，见 drawChart()）
-              Canvas(this.canvasCtx)
-                .width('100%')
-                .height(76)
-                .margin({ top: SP_M })
-                .onReady(() => {
-                  this.drawChart();
-                });
-
-              Text('最近 60 秒 · 每 2 秒采样 · 上下行各自独立刻度')
-                .fontSize(F_TINY)
-                .fontColor(C_TEXT_3)
-                .width('100%')
-                .margin({ top: 2 });
-            }
-            .width('100%').padding(SP_XL).backgroundColor(C_CARD)
-            .borderRadius(R_CARD).shadow(ShadowStyle.OUTER_DEFAULT_SM)
-            .margin({ bottom: 14 });
-
-            // 卡片 1：路由器信息
-            Column() {
-              Text('路由器信息').fontSize(16).fontWeight(FontWeight.Bold).width('100%');
-              this.routerInfoRows();
-            }
-            .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
-
-            // 卡片 2：运行状态
-            Column() {
-              Text('运行状态').fontSize(16).fontWeight(FontWeight.Bold).width('100%');
-              this.runStatusRows();
-            }
-            .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
-
-            // 卡片 3：内存使用率
-            Column() {
-              Text('内存使用率').fontSize(16).fontWeight(FontWeight.Bold).width('100%').margin({ bottom: 12 });
-              Row() {
-                Text(this.memoryUsed).fontSize(20).fontWeight(FontWeight.Bold);
-                Text(`/ ${this.memoryTotal}`).fontSize(14).fontColor(COLOR_SECONDARY).margin({ left: 4 });
+              // 卡片 4：在线设备
+              Column() {
+                Text('在线设备').fontSize(16).fontWeight(FontWeight.Bold).width('100%');
+                Text(String(this.onlineDevices))
+                  .fontSize(40).fontWeight(FontWeight.Bold)
+                  .fontColor(this.onlineDevices > 0 ? COLOR_PRIMARY : C_TEXT_1);
+                Text('台设备在线').fontSize(14).fontColor(COLOR_SECONDARY).margin({ top: 4 });
               }
-              Progress({ value: this.memoryPercent, total: 100, type: ProgressType.Linear })
-                .width('100%').height(8).borderRadius(4)
-                .color(this.memoryPercent < 50 ? COLOR_GREEN : (this.memoryPercent < 80 ? COLOR_ORANGE : COLOR_RED));
-              Text(`${this.memoryPercent}%`)
-                .fontSize(12).fontColor(COLOR_SECONDARY).width('100%').textAlign(TextAlign.End).margin({ top: 4 });
-
-              Row() {
-                Text('可用').fontSize(12).fontColor(COLOR_SECONDARY);
-                Blank();
-                Text(this.memoryAvailable).fontSize(12).fontColor(COLOR_SECONDARY);
-              }
-              .width('100%').margin({ top: 6 });
+              .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
             }
-            .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
-
-            // 卡片 4：在线设备
-            Column() {
-              Text('在线设备').fontSize(16).fontWeight(FontWeight.Bold).width('100%');
-              Text(String(this.onlineDevices))
-                .fontSize(40).fontWeight(FontWeight.Bold)
-                .fontColor(this.onlineDevices > 0 ? COLOR_PRIMARY : C_TEXT_1);
-              Text('台设备在线').fontSize(14).fontColor(COLOR_SECONDARY).margin({ top: 4 });
-            }
-            .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
-
-            // 刷新按钮
-            Button('刷新数据')
-              .width('100%').height(40).type(ButtonType.Capsule)
-              .margin({ top: 4, bottom: 32 })
-              .onClick(() => this.onRefresh());
+            .width('100%').padding(16)
           }
-          .width('100%').padding(16)
+          .width('100%').height('100%')
+          .scrollable(ScrollDirection.Vertical)
+          .edgeEffect(EdgeEffect.Spring);
         }
-        .width('100%').height('100%')
-        .scrollable(ScrollDirection.Vertical)
-        .edgeEffect(EdgeEffect.Spring);
+        .width('100%')
+        .height('100%')
+        .onRefreshing(() => this.onPullRefresh());
       }
 
       // 加载中
@@ -264,7 +268,7 @@ export struct DashboardPage {
           Text('⚠️').fontSize(40);
           Text(this.errorMsg).fontSize(14).margin({ top: 12 });
           Button('重试').type(ButtonType.Capsule).margin({ top: 16 })
-            .onClick(() => this.loadAllData());
+            .onClick(() => this.loadData());
         }
         .width('100%').height('100%').justifyContent(FlexAlign.Center);
       }
@@ -282,7 +286,7 @@ export struct DashboardPage {
    * 重要：必须**直接读 this.deviceModel 这些 @State**，不能把值当参数传进来。
    * ArkUI 的 @Builder 值传递参数不会建立状态依赖 —— 参数变了 UI 不会刷新。
    * 之前写成 row(label, value) 传参，导致静默自动刷新
-   * （loadAllData(true) 不切换 isLoading、内容不重建）时这几行永远停在旧值。
+   * （loadData('quiet') 不切换 isLoading、内容不重建）时这几行永远停在旧值。
    */
   @Builder
   routerInfoRows() {
@@ -363,20 +367,21 @@ export struct DashboardPage {
 
   // ==================== 数据加载 ====================
 
-  private async loadAllData(silent: boolean = false): Promise<void> {
-    if (!this.client.isLoggedIn()) {
-      this.hasError = true;
-      this.errorMsg = '客户端未登录';
-      this.isLoading = false;
-      return;
-    }
-
-    if (!silent) {
+  /**
+   * 加载仪表盘数据 —— 本页唯一的取数入口（刷新规范见 common/RefreshPolicy.ets）。
+   * kind 决定 Loading 与失败反馈：'first' 首屏 / 'pull' 下拉刷新 / 'quiet' 定时器与后台重载。
+   */
+  private async loadData(kind: LoadKind = 'first'): Promise<void> {
+    if (kind === 'first') {
       this.isLoading = true;
     }
-    this.hasError = false;
 
     try {
+      if (!this.client.isLoggedIn()) {
+        this.failLoad('客户端未登录', kind);
+        return;
+      }
+
       const boardResult = await this.client.getSystemBoard();
       const infoResult = await this.client.getSystemInfo();
       const deviceCount = await this.client.getOnlineDeviceCount();
@@ -388,8 +393,7 @@ export struct DashboardPage {
         this.kernelVersion = board.kernel || '--';
         this.hostname = board.hostname || '--';
       } else {
-        this.hasError = true;
-        this.errorMsg = `获取系统信息失败: ${boardResult.error || '未知错误'}`;
+        this.failLoad(`获取系统信息失败: ${boardResult.error || '未知错误'}`, kind);
         return;
       }
 
@@ -408,23 +412,42 @@ export struct DashboardPage {
         this.memoryUsed = this.formatBytes(used);
         this.memoryAvailable = mem.available ? this.formatBytes(mem.available) : '--';
       } else {
-        this.hasError = true;
-        this.errorMsg = `获取运行信息失败: ${infoResult.error || '未知错误'}`;
+        this.failLoad(`获取运行信息失败: ${infoResult.error || '未知错误'}`, kind);
         return;
       }
 
       this.onlineDevices = deviceCount;
+      // 成功就清掉错误页：即使已经停在错误页，后台的静默刷新也能把它自动救回来
+      this.hasError = false;
     } catch (e) {
-      this.hasError = true;
-      this.errorMsg = '数据加载失败: ' + JSON.stringify(e);
+      this.failLoad('数据加载失败: ' + JSON.stringify(e), kind);
     } finally {
       this.isLoading = false;
+      this.isRefreshing = false;
     }
   }
 
-  private onRefresh(): void {
-    promptAction.showToast({ message: '正在刷新...', duration: 1000 });
-    this.loadAllData(true);
+  /**
+   * 统一的失败处理，三档反馈（规范见 common/RefreshPolicy.ets）：
+   * 首屏失败 → 错误页；下拉刷新失败 → 保留已有数据 + 提示；静默刷新失败 → 只写日志。
+   */
+  private failLoad(msg: string, kind: LoadKind): void {
+    console.error('[Dashboard] ' + msg);
+    if (shouldShowErrorPage(kind)) {
+      this.hasError = true;
+      this.errorMsg = msg;
+    } else if (shouldToast(kind)) {
+      notifyLoadFailed(msg);
+    }
+  }
+
+  /** 下拉刷新的统一入口：挂给 Refresh 的 onRefreshing */
+  private onPullRefresh(): void {
+    if (this.isRefreshing) {
+      return;
+    }
+    this.isRefreshing = true;
+    this.loadData('pull');
   }
 
   private startAutoRefresh(): void {
@@ -432,7 +455,8 @@ export struct DashboardPage {
       return;
     }
     this.refreshTimer = setInterval(() => {
-      this.loadAllData(true);
+      // 后台静默刷新：不显示 Loading，失败也不打扰用户（数据留在屏幕上）
+      this.loadData('quiet');
     }, AUTO_REFRESH_INTERVAL_MS);
   }
 
