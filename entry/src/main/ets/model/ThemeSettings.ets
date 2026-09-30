@@ -13,6 +13,7 @@
 import { preferences } from '@kit.ArkData';
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
 import { window } from '@kit.ArkUI';
+import { BusinessError } from '@kit.BasicServicesKit';
 
 /** 外观模式：跟随系统 / 浅色 / 深色 */
 export type AppearanceMode = 'system' | 'light' | 'dark';
@@ -127,7 +128,7 @@ export class ThemeSettings {
   static refreshSystemBar(context: common.Context, mode: AppearanceMode): void {
     window.getLastWindow(context).then((win: window.Window) => {
       ThemeSettings.setupWindow(win, context, mode);
-    }).catch((err: BusinessErrorLike) => {
+    }).catch((err: BusinessError) => {
       // 启动早期（Ability.onCreate）还没窗口，这里会拿到 1300002；真正的配置
       // 由 EntryAbility 在 loadContent 回调里做（见 setupWindow），所以这里只留一行 info
       if (err.code === 1300002) {
