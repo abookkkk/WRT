@@ -107,7 +107,7 @@ HarmonyOS **默认禁止明文 HTTP**。想连局域网里的 `http://192.168.x.
 |---|---|
 | **沉浸式布局** | `expandSafeArea` 让渐变背景延伸到状态栏 / 导航栏之后（只扩展背景，内容仍留在安全区内） |
 | **系统符号图标** | `SymbolGlyph($r('sys.symbol.xxx'))` —— 标签栏与表单图标全用系统符号：`house` / `rectangle_stack` / `wifi` / `person` / `bolt` / `lock` / `lock_fill` / `eye` / `eye_slash` |
-| **全屏沉浸式 + 液态玻璃导航栏** | 窗口 `setWindowLayoutFullScreen(true)`，页面从**屏幕物理顶端**开始铺：卡片能滚到状态栏后面被虚化（华为图库那种观感）。顶栏 `.position({x:0,y:0})`+`zIndex` 悬浮、毛玻璃盖住状态栏那条而文字落在状态栏下方；底栏**自绘**（`barHeight(0)` + 自己算高度的 Row，底部垫出手势条高度，毛玻璃一直铺到物理底部）。各页用 `AppStorage` 的 `safeTop`/`safeBottom` 自己留避让 |
+| **全屏沉浸式 + 液态玻璃导航栏** | 窗口 `setWindowLayoutFullScreen(true)`，页面从**屏幕物理顶端**开始铺：卡片能滚到状态栏后面被虚化（华为图库那种观感）。顶栏 `.position({x:0,y:0})`+`zIndex` 悬浮、毛玻璃盖住状态栏那条而文字落在状态栏下方；底栏**自绘**（`barHeight(0)` + 自己算高度的 Row，底部垫出手势条高度，毛玻璃做成悬浮胶囊）。各页用 `AppStorage` 的 `safeTop`/`safeBottom` 自己留避让 |
 | **渐变背景** | `linearGradient` 浅蓝 → 灰白 |
 | **玻璃拟态卡片** | 半透明白 `#F2FFFFFF` + 圆角 20 + `ShadowStyle.OUTER_DEFAULT_SM` |
 | **登录页** | 深蓝渐变头部 + 圆形半透明徽章 + 玻璃表单卡片；键盘「前往」键通过 `onSubmit` 直接提交登录 |
@@ -260,6 +260,10 @@ clashInfoRows() { Column() { Row() { Text('版本'); Text(this.version) } } }
 - [x] **检查更新改成「先问，再跳浏览器」** —— 原来发现新版本就自动下到应用目录、再让用户「另存为」导出。现在：发现新版本 → 弹确认框（「稍后」/「去浏览器下载」）→ 确认后 `startAbility` 跳系统浏览器下载。
       实测（模拟器 `com.huawei.hmos.browser`）：确认后浏览器弹出自己的下载确认页（`OpenWrt-Manager-v1.0.5-unsigned.hap` / 1.10 MB / 立即下载）✓。
       App 内的下载/进度/导出/已下载识别那套代码**整段删掉**（不留死代码），`UpdateChecker` 只保留「取最新版本 + 比版本号」
+
+- [x] **底部标签栏改成「悬浮胶囊」**（当下流行的那种）—— 原来是一条贴边通栏；现在是不贴边的圆角胶囊（左右各留 12vp、底部让开手势条），
+      **选中项带药丸高亮**（用调色板的 `c_primary_soft` 当药丸底色，图标/文字同时切主色），整圈 1px 细边 + 轻微投影让它"浮"起来，
+      材质与顶栏同一套液态玻璃（透明底 + `backgroundEffect` 纯模糊）。页面底部留白按「手势条 + 胶囊 60 + 边距」重算（`safeBottom`）
 
 ### 待办
 

@@ -599,7 +599,7 @@ private onPullRefresh(): void {
    - **底栏**：⚠️ 全屏后系统的 `BarPosition.End` 标签栏会**掉进手势条区域**，而 `barHeight` 只会让栏变高、
      连带把内容区往上挤（内容就又滚不到栏下面）。所以改成**自绘**：`Tabs.barHeight(0)` +
      一条自己算高度的 `Row`（复用 `tabItem()` builder，切页走 `TabsController.changeIndex()`），
-     底部 `padding.bottom = SP_S + bottomInset` 把玻璃一直铺到屏幕物理底部。
+     自绘的那条做成**悬浮胶囊**（不贴边 + 选中项药丸高亮），`margin.bottom = SP_S + bottomInset` 让开手势条。
      （曾经的 `Tabs.barOverlap(true)` 方案只能解决"越过安全区底边"，全屏后不够用。）
 3. **两栏的材质＝液态玻璃**：**底色完全透明**（`backgroundColor(Color.Transparent)`）+ `backgroundEffect({ radius: 40, saturation: 1.4, brightness: 1.0, color: Color.Transparent })`。
    ⚠️ 别用 `backgroundBlurStyle(BlurStyle.…)` —— 那套「材质」自带色调（`c_bar` 那类半透明底就是这么来的），
