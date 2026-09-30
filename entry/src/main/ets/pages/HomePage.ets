@@ -283,6 +283,8 @@ export struct HomePage {
             // 系统标签栏置 0 高：栏改由下面自绘那条担任（它才能浮在内容之上 + 铺到屏幕物理底部）
             .barHeight(0)
             .barMode(BarMode.Fixed)
+            // 左右滑动切页（Tabs 的默认能力，这里显式写出来表明是刻意保留的）
+            .scrollable(true)
             .animationDuration(280)
             .onChange((index: number) => {
               this.currentIndex = index;
@@ -341,7 +343,19 @@ export struct HomePage {
             .backgroundEffect({ radius: 20, saturation: 1.4, brightness: 1.0, color: Color.Transparent })
             .border({ width: 1, color: C_DIVIDER })
             .shadow(ShadowStyle.OUTER_DEFAULT_SM)
-            .clip(true);
+            .clip(true)
+            // 胶囊自己也要能滑：它是自绘的 Row，不在 Tabs 的手势区里，
+            // 所以单独接一个横向拖拽 —— 往左划下一页、往右划上一页（和页面区域滑动方向一致）
+            .gesture(
+              PanGesture({ direction: PanDirection.Horizontal, distance: 24 })
+                .onActionEnd((event: GestureEvent) => {
+                  if (Math.abs(event.offsetX) < 40) {
+                    return;
+                  }
+                  const raw: number = event.offsetX < 0 ? this.currentIndex + 1 : this.currentIndex - 1;
+                  this.switchTab(raw < 0 ? 0 : (raw > 3 ? 3 : raw));
+                })
+            );
           }
           .layoutWeight(1)
           .width('100%');
