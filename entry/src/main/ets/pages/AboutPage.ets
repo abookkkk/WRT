@@ -69,23 +69,37 @@ export struct AboutPage {
         return;
       }
       const names: string[] = fs.listFileSync(dir);
-      let newest: string = '';
+      let bestName: string = '';
+      let bestVer: string = '';
       for (let i = 0; i < names.length; i++) {
-        if (names[i].endsWith('.hap')) {
-          newest = names[i];
+        if (!names[i].endsWith('.hap')) {
+          continue;
+        }
+        const vm: RegExpMatchArray | null = names[i].match(/v?(\d+(?:\.\d+)+)/);
+        const ver: string = vm !== null ? vm[1] : '';
+        if (ver.length === 0) {
+          continue;
+        }
+        if (UpdateChecker.compareVersion(ver, this.appVersion) <= 0) {
+          // 不比当前版本新（多半已经装过了）：留着只占地方，直接清掉
+          try {
+            fs.unlinkSync(dir + '/' + names[i]);
+            console.info('[About] 已清理过期的更新包 ' + names[i]);
+          } catch (e) {
+            console.warn('[About] 清理 ' + names[i] + ' 失败: ' + JSON.stringify(e));
+          }
+          continue;
+        }
+        // 多个包时取版本最高的那个（不能靠文件名顺序）
+        if (bestVer.length === 0 || UpdateChecker.compareVersion(ver, bestVer) > 0) {
+          bestVer = ver;
+          bestName = names[i];
         }
       }
-      if (newest.length > 0) {
-        // 只有「比当前版本新」才提示：用户装完新版再回到这页，不该还看到"已下载"
-        const vm: RegExpMatchArray | null = newest.match(/v?(\d+(?:\.\d+)+)/);
-        const fileVer: string = vm !== null ? vm[1] : '';
-        if (fileVer.length > 0 && UpdateChecker.compareVersion(fileVer, this.appVersion) > 0) {
-          this.savedPath = dir + '/' + newest;
-          this.statusText = '应用目录里已有下载好的更新包（' + fileVer + '）';
-          console.info('[About] 发现已下载的更新包: ' + newest);
-        } else {
-          console.info('[About] 目录里的 ' + newest + ' 不比当前版本新（' + this.appVersion + '），不提示');
-        }
+      if (bestName.length > 0) {
+        this.savedPath = dir + '/' + bestName;
+        this.statusText = '应用目录里已有下载好的更新包（' + bestVer + '）';
+        console.info('[About] 发现已下载的更新包: ' + bestName);
       }
     } catch (e) {
       console.warn('[About] 检查已下载的更新包失败: ' + JSON.stringify(e));
