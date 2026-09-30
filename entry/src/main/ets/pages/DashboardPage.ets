@@ -111,20 +111,12 @@ export struct DashboardPage {
             Column() {
               // ===== 卡片 0：实时网速 + 60 秒趋势图 =====
               Column() {
-                Row() {
-                  Text('实时网速')
-                    .fontSize(F_SECTION)
-                    .fontWeight(FontWeight.Bold)
-                    .fontColor(C_TEXT_1)
-                    .layoutWeight(1);
-                  Text(this.wanDevice.length > 0 ? ('WAN · ' + this.wanDevice) : 'WAN')
-                    .fontSize(F_TINY)
-                    .fontColor(C_TEXT_3)
-                    .fontFamily('monospace');
-                }
-                .width('100%')
-                .alignItems(VerticalAlign.Center)
-                .margin({ bottom: SP_M });
+                Text('实时网速')
+                  .fontSize(F_SECTION)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor(C_TEXT_1)
+                  .width('100%')
+                  .margin({ bottom: SP_M });
 
                 Row() {
                   // 下行
@@ -188,11 +180,6 @@ export struct DashboardPage {
                     this.drawChart();
                   });
 
-                Text('最近 60 秒 · 每 2 秒采样 · 上下行各自独立刻度')
-                  .fontSize(F_TINY)
-                  .fontColor(C_TEXT_3)
-                  .width('100%')
-                  .margin({ top: 2 });
               }
               .width('100%').padding(SP_XL).backgroundColor(C_CARD)
               .borderRadius(R_CARD).shadow(ShadowStyle.OUTER_DEFAULT_SM)
