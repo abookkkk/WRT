@@ -94,7 +94,7 @@ export class OpenWrtClient {
   private loggedIn: boolean = false;
   private connectTimeout: number;
   private readTimeout: number;
-  /** 会话过期回调（由 Index 注册，用于统一退回登录页） */
+  /** 会话过期回调（由 Index 注册：有记住的密码就自动重登，否则退回登录页） */
   private onSessionExpiredCb?: () => void;
   /** 只通知一次：并发请求可能同时撞上过期，避免刷屏 */
   private sessionExpiredFired: boolean = false;
@@ -154,9 +154,9 @@ export class OpenWrtClient {
   /**
    * 注册"会话已过期"回调。
    *
-   * 为什么需要：rpcd 的 session 300 秒空闲就失效，而密码不落地（安全考虑），
-   * App 无法自动重登。所以一旦某个调用拿到 -32002，就统一通知上层退回登录页，
-   * 而不是让用户在每个页面看到"获取失败 / 请求异常"却不知道为什么。
+   * 为什么需要：rpcd 的 session 300 秒空闲就失效。一旦某个调用拿到 -32002，就统一通知上层，
+   * 由上层决定：登录页勾过「记住密码」就用它自动重登（见 CredentialStore.ets），
+   * 没记住才退回登录页 —— 而不是让用户在每个页面看到"获取失败 / 请求异常"却不知道为什么。
    */
   setOnSessionExpired(cb: () => void): void {
     this.onSessionExpiredCb = cb;
@@ -176,7 +176,7 @@ export class OpenWrtClient {
     this.sessionExpiredFired = true;
     // 本地标记为未登录：后续调用直接短路，不再去骚扰路由器
     this.loggedIn = false;
-    console.warn('[OpenWrtClient] 会话已过期（-32002），通知上层退回登录页');
+    console.warn('[OpenWrtClient] 会话已过期（-32002），通知上层处理');
     if (this.onSessionExpiredCb) {
       this.onSessionExpiredCb();
     }

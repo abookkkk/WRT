@@ -7,12 +7,14 @@
  *
  * 启动时自动尝试从本地恢复 Session；
  * 运行期间一旦检测到 session 过期（rpcd 空闲 300 秒失效，返回 -32002），
- * 统一清掉本地 session 并退回登录页 —— 密码不落地，所以无法自动重登。
+ * 处理方式：登录页勾过「记住密码」就用它静默重登（在同一个客户端实例上，页面不受影响）；
+ * 没记住 / 密码改过了，才清掉本地 session 退回登录页。
  */
 
 import { promptAction } from '@kit.ArkUI';
 import { OpenWrtClient } from '../model/OpenWrtClient';
 import { SessionStore } from '../model/SessionStore';
+import { CredentialStore, SavedCredential } from '../model/CredentialStore';
 import { GlobalContext } from '../model/GlobalContext';
 import { LoginPage } from './LoginPage';
 import { HomePage } from './HomePage';
@@ -24,6 +26,8 @@ struct Index {
   @State private currentPage: 'login' | 'home' = 'login';
   /** 客户端实例 */
   @State private client: OpenWrtClient | null = null;
+  /** 会话过期处理的重入保护：并发请求可能同时撞上过期 */
+  private expiring: boolean = false;
 
   aboutToAppear(): void {
     // 启动时尝试自动恢复登录
@@ -96,25 +100,125 @@ struct Index {
     if (this.currentPage !== 'home') {
       return;
     }
-    console.warn('[Index] 会话已过期，返回登录页');
+    if (this.expiring) {
+      return;
+    }
+    this.expiring = true;
+    try {
+      console.warn('[Index] 会话已过期');
 
+      // 1) 记住过密码就直接在**同一个客户端**上重登 —— 不换实例，
+      //    各页面在构造时拿到的就是它，换了它们手里的引用就废了。
+      if (await this.reloginInPlace()) {
+        promptAction.showToast({ message: '登录已过期，已自动重新登录', duration: 2500 });
+        return;
+      }
+
+      // 2) 没记住密码 / 密码不对 → 照旧清掉本地 session，退回登录页
+      try {
+        const ctx = GlobalContext.getInstance().getContext();
+        if (ctx) {
+          const store = new SessionStore();
+          await store.init(ctx);
+          await store.clear();
+        }
+      } catch (e) {
+        console.error('[Index] 清除过期 Session 失败: ' + JSON.stringify(e));
+      }
+
+      if (this.client) {
+        this.client.destroy();
+      }
+      this.client = null;
+      this.currentPage = 'login';
+      promptAction.showToast({ message: '登录已过期，请重新登录', duration: 2500 });
+    } finally {
+      this.expiring = false;
+    }
+  }
+
+  /**
+   * 用记住的密码在**当前客户端**上重新登录。
+   * 成功返回 true，并把新 session 存回本地（下次启动可直接恢复）。
+   */
+  private async reloginInPlace(): Promise<boolean> {
+    const client: OpenWrtClient | null = this.client;
+    if (client === null) {
+      return false;
+    }
     try {
       const ctx = GlobalContext.getInstance().getContext();
-      if (ctx) {
-        const store = new SessionStore();
-        await store.init(ctx);
-        await store.clear();
+      if (!ctx) {
+        return false;
       }
-    } catch (e) {
-      console.error('[Index] 清除过期 Session 失败: ' + JSON.stringify(e));
-    }
+      const cred: SavedCredential | null = await new CredentialStore().load(ctx);
+      if (cred === null || cred.password.length === 0) {
+        return false;
+      }
+      const username: string = cred.username.length > 0 ? cred.username : 'root';
+      const ok: boolean = await client.login(username, cred.password);
+      if (!ok) {
+        console.warn('[Index] 自动重登失败（密码可能改过了），退回登录页');
+        return false;
+      }
 
-    if (this.client) {
-      this.client.destroy();
+      const store: SessionStore = new SessionStore();
+      await store.init(ctx);
+      const saved = await store.load();
+      await store.save({
+        host: saved ? saved.host : client.getHost(),
+        port: saved ? saved.port : 80,
+        useHttps: saved ? saved.useHttps : false,
+        username: username,
+        sessionId: client.getSessionId()
+      });
+      console.info('[Index] 已用记住的密码自动重登（同一个客户端）');
+      return true;
+    } catch (e) {
+      console.warn('[Index] 自动重登异常: ' + JSON.stringify(e));
+      return false;
     }
-    this.client = null;
-    this.currentPage = 'login';
-    promptAction.showToast({ message: '登录已过期，请重新登录', duration: 2500 });
+  }
+
+  /**
+   * 启动时用记住的密码直接登录（这条路要新建客户端，因为上一个已经销毁了）。
+   * @returns 成功返回新客户端，失败返回 null
+   */
+  private async loginWithSavedCredential(host: string, port: number, useHttps: boolean): Promise<OpenWrtClient | null> {
+    try {
+      const ctx = GlobalContext.getInstance().getContext();
+      if (!ctx) {
+        return null;
+      }
+      const cred: SavedCredential | null = await new CredentialStore().load(ctx);
+      if (cred === null || cred.password.length === 0) {
+        return null;
+      }
+      const username: string = cred.username.length > 0 ? cred.username : 'root';
+      const client: OpenWrtClient = new OpenWrtClient(host, port, useHttps);
+      const ok: boolean = await client.login(username, cred.password);
+      if (!ok) {
+        client.destroy();
+        console.warn('[Index] 记住的密码登录失败（可能改过了）');
+        return null;
+      }
+      this.attachClient(client);
+
+      const store: SessionStore = new SessionStore();
+      await store.init(ctx);
+      await store.save({
+        host: host,
+        port: port,
+        useHttps: useHttps,
+        username: username,
+        sessionId: client.getSessionId()
+      });
+      console.info('[Index] 已用记住的密码自动登录');
+      return client;
+    } catch (e) {
+      console.warn('[Index] 自动登录异常: ' + JSON.stringify(e));
+      return null;
+    }
   }
 
   /**
@@ -147,11 +251,16 @@ struct Index {
         this.currentPage = 'home';
         console.info('[Index] Session 自动恢复成功');
       } else {
-        // Session 已过期，销毁客户端，留在登录页
-        console.warn('[Index] Session 已过期，需要重新登录');
+        // Session 已过期：先试试用记住的密码直接登进去，不行再留在登录页
+        console.warn('[Index] Session 已过期，尝试用记住的密码自动登录');
         client.destroy();
         // 清除已过期的本地 Session
         await store.clear();
+        const auto: OpenWrtClient | null = await this.loginWithSavedCredential(saved.host, saved.port, saved.useHttps);
+        if (auto !== null) {
+          this.client = auto;
+          this.currentPage = 'home';
+        }
       }
     } catch (e) {
       console.warn('[Index] 自动登录失败: ' + JSON.stringify(e));
