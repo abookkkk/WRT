@@ -4,7 +4,7 @@
  * 视觉特性（HarmonyOS 6）：
  *   - 沉浸式：expandSafeArea 让内容延伸到状态栏 / 导航栏区域
  *   - 渐变背景：浅蓝 → 灰白过渡
- *   - 毛玻璃胶囊标签栏：barBackgroundBlurStyle + 半透明底
+ *   - 液态玻璃上下栏：透明底 + backgroundEffect 纯模糊（内容从栏下滚过）
  *   - 系统符号图标：SymbolGlyph($r('sys.symbol.xxx'))，随选中态变色
  *
  * 注意：$r() 的资源名必须是**字面量**，不能用模板字符串拼，
@@ -27,7 +27,7 @@ import { AboutPage } from './AboutPage';
 import { OpenClashPage } from './OpenClashPage';
 import {
   C_PRIMARY, C_BG_TOP, C_BG_MID, C_BG_BOTTOM, C_TEXT_1, C_TEXT_2, C_TEXT_3, C_DANGER,
-  C_FILL, C_BAR, C_DANGER_CHIP,
+  C_FILL, C_DANGER_CHIP, C_DIVIDER,
   F_HERO, F_TITLE, F_SECTION, F_CAPTION, F_TINY, ICON_L, ICON_M, SP_XS, SP_S, SP_M, SP_L, colorString
 } from '../common/Theme';
 
@@ -243,8 +243,11 @@ export struct HomePage {
           // 但栏里的文字/按钮仍落在状态栏下方，不会和时钟、电量图标打架
           .padding({ left: SP_L, right: SP_L, top: this.topInset + SP_S, bottom: SP_S })
           .alignItems(VerticalAlign.Center)
-          .backgroundColor(C_BAR)
-          .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+          // 「液态玻璃」：底色**完全透明**、不加任何色调，只对背后的内容做模糊（再轻微提一点饱和度），
+          // 让玻璃有存在感但不遮挡内容。要更糊就把 radius 调大
+          .backgroundColor(Color.Transparent)
+          .backgroundEffect({ radius: 40, saturation: 1.4, brightness: 1.0, color: Color.Transparent })
+          .border({ width: { bottom: 1 }, color: C_DIVIDER })
           // 脱离布局流、绝对定位到屏幕顶端：Tabs 因此能占满整屏，卡片可以从顶栏后面滚过去被虚化
           .position({ x: 0, y: 0 })
           .zIndex(2);
@@ -319,8 +322,10 @@ export struct HomePage {
             }
             .width('100%')
             .padding({ top: SP_S, bottom: SP_S + this.bottomInset })
-            .backgroundColor(C_BAR)
-            .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK);
+            // 与顶栏同一套「液态玻璃」：透明底 + 纯模糊，边缘一条细线
+            .backgroundColor(Color.Transparent)
+            .backgroundEffect({ radius: 40, saturation: 1.4, brightness: 1.0, color: Color.Transparent })
+            .border({ width: { top: 1 }, color: C_DIVIDER });
           }
           .layoutWeight(1)
           .width('100%');

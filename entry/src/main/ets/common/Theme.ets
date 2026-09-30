@@ -59,7 +59,7 @@ export const C_BG_MID: Resource = $r('app.color.c_bg_mid');
 export const C_BG_BOTTOM: Resource = $r('app.color.c_bg_bottom');
 
 /** 底部标签栏底色（毛玻璃底下那层半透明色） */
-export const C_BAR: Resource = $r('app.color.c_bar');
+
 
 /** 登录页顶部渐变（0~3 从上到下） */
 export const C_LOGIN_GRAD_0: Resource = $r('app.color.c_login_grad_0');
