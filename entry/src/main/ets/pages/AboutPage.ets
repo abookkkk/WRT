@@ -4,27 +4,26 @@
  * 三块内容：
  *   1. 版本信息（读 bundleManager，拿真实的 versionName / versionCode）
  *   2. 联系方式（GitHub 仓库 / Issues，点了用系统浏览器打开）
- *   3. 检查更新：调 GitHub Releases API；**发现新版本会自动下载** HAP 到应用目录，
- *      再提供「另存为」用系统文件选择器导出（方便用 hdc / 文件管理安装）。
+ *   3. 检查更新：调 GitHub Releases API，**只负责告诉用户有没有新版本**；
+ *      要不要下载由用户点确认框决定 —— 确认后**跳系统浏览器**下载（App 自己不落盘、不安装）。
  *
- * ⚠️ 不能自动安装：普通应用没有静默安装权限（`bundle.installer` 是系统 API + `INSTALL_BUNDLE` 权限），
- * 而且仓库里的 HAP 是**未签名**的 —— 真机得自己签名后才装得上，模拟器可以直接装。
- * 页面里把这两条都写明了，不糊弄用户。
+ * 为什么不在 App 里下载/安装：
+ *   · 需求就是这样：先问用户，确认后交给浏览器，省得 App 里堆安装包、也省得用户在两处找文件；
+ *   · 鸿蒙普通应用本来也没有静默安装权限（`bundle.installer` 是系统 API + `INSTALL_BUNDLE` 权限），
+ *     而且仓库里的 HAP 是**未签名**的 —— 真机得自己签名后再构建，模拟器才能直接装。
  */
 
 import { promptAction } from '@kit.ArkUI';
 import { common, Want } from '@kit.AbilityKit';
 import { bundleManager } from '@kit.AbilityKit';
-import { picker } from '@kit.CoreFileKit';
-import fs from '@ohos.file.fs';
 import {
   UpdateChecker, ReleaseInfo,
   REPO_URL, REPO_ISSUES_URL, REPO_RELEASES_URL
 } from '../model/UpdateChecker';
 import {
-  C_PRIMARY, C_SUCCESS, C_WARNING, C_TEXT_1, C_TEXT_2, C_TEXT_3,
-  C_CARD, C_FILL, C_DIVIDER,
-  F_SECTION, F_BODY, F_CAPTION, F_TINY, R_CARD, SP_S, SP_M, SP_L, SP_XL, ICON_M
+  C_PRIMARY, C_WARNING, C_TEXT_1, C_TEXT_2, C_TEXT_3,
+  C_CARD, C_FILL,
+  F_SECTION, F_BODY, F_CAPTION, F_TINY, R_CARD, SP_S, SP_M, SP_L, SP_XL, ICON_M, colorString
 } from '../common/Theme';
 
 @Component
@@ -42,68 +41,10 @@ export struct AboutPage {
   /** 最新版本信息 */
   @State private release: ReleaseInfo | null = null;
 
-  /** 下载中 / 进度 0~1 / 下载好的本地路径 */
-  @State private downloading: boolean = false;
-  @State private progress: number = 0;
-  /** 下载总量（atom 兜底时拿不到，为 0 就不显示百分比） */
-  @State private downloadTotal: number = 0;
-  @State private savedPath: string = '';
-  @State private saving: boolean = false;
-
   private checker: UpdateChecker = new UpdateChecker();
 
   aboutToAppear(): void {
     this.loadAppInfo();
-    this.detectDownloaded();
-  }
-
-  /** 应用目录里是不是已经有下好的更新包（上次下过、App 重启后）—— 有就把它显示出来，别让用户重下 */
-  private detectDownloaded(): void {
-    const ctx: common.Context | null = this.getCtx();
-    if (ctx === null) {
-      return;
-    }
-    try {
-      const dir: string = ctx.filesDir + '/updates';
-      if (!fs.accessSync(dir)) {
-        return;
-      }
-      const names: string[] = fs.listFileSync(dir);
-      let bestName: string = '';
-      let bestVer: string = '';
-      for (let i = 0; i < names.length; i++) {
-        if (!names[i].endsWith('.hap')) {
-          continue;
-        }
-        const vm: RegExpMatchArray | null = names[i].match(/v?(\d+(?:\.\d+)+)/);
-        const ver: string = vm !== null ? vm[1] : '';
-        if (ver.length === 0) {
-          continue;
-        }
-        if (UpdateChecker.compareVersion(ver, this.appVersion) <= 0) {
-          // 不比当前版本新（多半已经装过了）：留着只占地方，直接清掉
-          try {
-            fs.unlinkSync(dir + '/' + names[i]);
-            console.info('[About] 已清理过期的更新包 ' + names[i]);
-          } catch (e) {
-            console.warn('[About] 清理 ' + names[i] + ' 失败: ' + JSON.stringify(e));
-          }
-          continue;
-        }
-        // 多个包时取版本最高的那个（不能靠文件名顺序）
-        if (bestVer.length === 0 || UpdateChecker.compareVersion(ver, bestVer) > 0) {
-          bestVer = ver;
-          bestName = names[i];
-        }
-      }
-      if (bestName.length > 0) {
-        this.savedPath = dir + '/' + bestName;
-        this.statusText = '应用目录里已有下载好的更新包（' + bestVer + '）';
-        console.info('[About] 发现已下载的更新包: ' + bestName);
-      }
-    } catch (e) {
-      console.warn('[About] 检查已下载的更新包失败: ' + JSON.stringify(e));
-    }
   }
 
   build() {
@@ -161,7 +102,7 @@ export struct AboutPage {
             Button(this.checking ? '检查中…' : '检查更新')
               .fontSize(F_CAPTION).height(32).type(ButtonType.Capsule)
               .backgroundColor(C_PRIMARY)
-              .enabled(!this.checking && !this.downloading)
+              .enabled(!this.checking)
               .onClick(() => this.checkUpdate());
           }
           .width('100%').alignItems(VerticalAlign.Center);
@@ -173,17 +114,8 @@ export struct AboutPage {
               .width('100%').lineHeight(18).margin({ top: SP_M });
           }
 
-          // 没检查出更新（或检查失败）时，给一条手动通道
-          if (!this.hasUpdate && !this.downloading && this.savedPath.length === 0) {
-            Button('打开发布页手动看看')
-              .fontSize(F_CAPTION).height(30).type(ButtonType.Capsule)
-              .backgroundColor(C_FILL).fontColor(C_TEXT_2)
-              .margin({ top: SP_M })
-              .onClick(() => this.openUrl(REPO_RELEASES_URL));
-          }
-
-          // 有新版：显示版本号 + 更新日志 + 下载进度
-          if (this.release !== null && this.hasUpdate && !this.downloading && this.savedPath.length === 0) {
+          // 有新版：显示最新版本 + 更新日志，下载交给浏览器
+          if (this.release !== null && this.hasUpdate) {
             Text('最新版本 ' + this.release.tag + (this.release.hapSize > 0 ? (' · ' + this.formatSize(this.release.hapSize)) : ''))
               .fontSize(F_CAPTION).fontColor(C_TEXT_2).width('100%').margin({ top: SP_M });
             if (this.release.notes.length > 0) {
@@ -192,32 +124,11 @@ export struct AboutPage {
                 .maxLines(12).textOverflow({ overflow: TextOverflow.Ellipsis })
                 .margin({ top: SP_S });
             }
-          }
-
-          if (this.downloading) {
-            Text(this.downloadTotal > 0
-              ? ('正在下载更新包… ' + Math.round(this.progress * 100) + '%')
-              : '正在下载更新包…（atom 兜底拿不到大小，进度不可知）')
-              .fontSize(F_CAPTION).fontColor(C_TEXT_2).width('100%').margin({ top: SP_M });
-            if (this.downloadTotal > 0) {
-              Progress({ value: this.progress * 100, total: 100, type: ProgressType.Linear })
-                .width('100%').height(8).borderRadius(4)
-                .color(C_PRIMARY).margin({ top: SP_S });
-            }
-          }
-
-          if (this.savedPath.length > 0) {
-            Text('已下载到应用目录')
-              .fontSize(F_CAPTION).fontColor(C_SUCCESS).width('100%').margin({ top: SP_M });
-            Text(this.savedPath)
-              .fontSize(F_TINY).fontColor(C_TEXT_3).width('100%')
-              .fontFamily('monospace').lineHeight(15).margin({ top: 2 });
             Row() {
-              Button(this.saving ? '导出中…' : '另存为…')
+              Button('去浏览器下载')
                 .fontSize(F_CAPTION).height(32).type(ButtonType.Capsule)
                 .backgroundColor(C_PRIMARY)
-                .enabled(!this.saving)
-                .onClick(() => this.exportHap());
+                .onClick(() => this.downloadInBrowser());
               Button('打开发布页')
                 .fontSize(F_CAPTION).height(32).type(ButtonType.Capsule)
                 .backgroundColor(C_FILL).fontColor(C_TEXT_2)
@@ -225,6 +136,13 @@ export struct AboutPage {
                 .onClick(() => this.openUrl(REPO_RELEASES_URL));
             }
             .width('100%').margin({ top: SP_M });
+          } else {
+            // 没查出更新（或检查失败）时，给一条手动通道
+            Button('打开发布页手动看看')
+              .fontSize(F_CAPTION).height(30).type(ButtonType.Capsule)
+              .backgroundColor(C_FILL).fontColor(C_TEXT_2)
+              .margin({ top: SP_M })
+              .onClick(() => this.openUrl(REPO_RELEASES_URL));
           }
         }
         .width('100%').padding(SP_XL)
@@ -235,11 +153,13 @@ export struct AboutPage {
         Column() {
           Text('说明').fontSize(F_SECTION).fontWeight(FontWeight.Bold).fontColor(C_TEXT_1)
             .width('100%').margin({ bottom: SP_S });
-          Text('· 更新包来自 GitHub 上你这个仓库的 Releases，检查更新用的是公开 API（不需要 token）')
+          Text('· 检查更新用的是 GitHub 公开 API（不需要 token）；被限流时会退到 releases.atom 拿版本号，界面会说明')
+            .fontSize(F_TINY).fontColor(C_TEXT_3).width('100%').lineHeight(16).margin({ bottom: 4 });
+          Text('· **不会自动下载**：确认后由系统浏览器下载，装不装、什么时候装都由你决定')
             .fontSize(F_TINY).fontColor(C_TEXT_3).width('100%').lineHeight(16).margin({ bottom: 4 });
           Text('· Releases 里的 HAP 是未签名的：**模拟器可以直接装**，真机要用 DevEco 配置自动签名后重新构建才装得上')
             .fontSize(F_TINY).fontColor(C_TEXT_3).width('100%').lineHeight(16).margin({ bottom: 4 });
-          Text('· 鸿蒙普通应用没有静默安装权限（bundle.installer 是系统 API），所以只能下到本机再导出安装')
+          Text('· 鸿蒙普通应用没有静默安装权限（bundle.installer 是系统 API），所以由你手动安装')
             .fontSize(F_TINY).fontColor(C_TEXT_3).width('100%').lineHeight(16);
         }
         .width('100%').padding(SP_XL)
@@ -286,14 +206,12 @@ export struct AboutPage {
     }
   }
 
-  /** 检查更新：有新版本就自动开始下载（用户要的就是这个） */
+  /** 检查更新：只比对版本 + 问用户，绝不自动下载 */
   private async checkUpdate(): Promise<void> {
     this.checking = true;
     this.statusText = '正在检查…';
     this.hasUpdate = false;
     this.release = null;
-    this.savedPath = '';
-    this.progress = 0;
 
     try {
       const ri: ReleaseInfo | null = await this.checker.fetchLatest();
@@ -304,17 +222,15 @@ export struct AboutPage {
         return;
       }
       const cmp: number = UpdateChecker.compareVersion(ri.version, this.appVersion);
+      this.release = ri;
       if (cmp <= 0) {
         this.statusText = '已是最新版本（远端 ' + ri.tag + '）';
-        this.release = ri;
         return;
       }
-      this.release = ri;
       this.hasUpdate = true;
       this.statusText = '发现新版本 ' + ri.tag + '（当前 ' + this.appVersion + '）'
-        + (ri.viaAtom ? '［API 限流，版本号来自 releases.atom］' : '')
-        + '，开始自动下载…';
-      await this.startDownload(ri);
+        + (ri.viaAtom ? '［API 限流，版本号来自 releases.atom］' : '');
+      await this.askDownload(ri);
     } catch (e) {
       this.statusText = '检查异常: ' + JSON.stringify(e);
     } finally {
@@ -322,70 +238,33 @@ export struct AboutPage {
     }
   }
 
-  private async startDownload(ri: ReleaseInfo): Promise<void> {
-    const ctx: common.Context | null = this.getCtx();
-    if (ctx === null) {
-      this.statusText = '拿不到应用上下文，无法下载';
-      return;
-    }
-    this.downloading = true;
-    this.progress = 0;
+  /** 先问用户要不要下载；点「去浏览器下载」才跳浏览器 */
+  private async askDownload(ri: ReleaseInfo): Promise<void> {
     try {
-      const dir: string = ctx.filesDir + '/updates';
-      const path: string = await this.checker.downloadHap(ri, dir, (received: number, total: number) => {
-        this.downloadTotal = total;
-        this.progress = total > 0 ? Math.min(1, received / total) : 0;
+      const res = await promptAction.showDialog({
+        title: '发现新版本 ' + ri.tag,
+        message: '当前版本 ' + this.appVersion + '。\n\n要去浏览器下载新版安装包吗？\n（本应用不保存安装包，也不自动安装）',
+        buttons: [
+          { text: '稍后', color: colorString(C_TEXT_2, '#666666') },
+          { text: '去浏览器下载', color: colorString(C_PRIMARY, '#0A59F7') }
+        ]
       });
-      if (path.length > 0) {
-        this.savedPath = path;
-        this.statusText = '新版本 ' + ri.tag + ' 已下载完成';
-      } else {
-        this.statusText = '下载失败（可以点「打开发布页」手动下载）';
+      if (res.index === 1) {
+        this.downloadInBrowser();
       }
     } catch (e) {
-      this.statusText = '下载异常: ' + JSON.stringify(e);
-    } finally {
-      this.downloading = false;
+      console.error('[About] 弹确认框失败: ' + JSON.stringify(e));
     }
   }
 
-  /** 用系统文件选择器导出（保存到「下载」等位置，方便 hdc / 文件管理安装） */
-  private async exportHap(): Promise<void> {
-    if (this.savedPath.length === 0) {
+  /** 跳系统浏览器下载：优先直接开安装包地址，退而求其次开 release 页面 */
+  private downloadInBrowser(): void {
+    const ri: ReleaseInfo | null = this.release;
+    if (ri === null) {
+      this.openUrl(REPO_RELEASES_URL);
       return;
     }
-    this.saving = true;
-    try {
-      const ctx = getContext(this) as common.UIAbilityContext;
-      const opt: picker.DocumentSaveOptions = new picker.DocumentSaveOptions();
-      opt.newFileNames = [this.hapFileName()];
-      const p: picker.DocumentViewPicker = new picker.DocumentViewPicker(ctx);
-      const uris: string[] = await p.save(opt);
-      if (uris.length === 0) {
-        return;
-      }
-      fs.copyFileSync(this.savedPath, uris[0]);
-      promptAction.showToast({ message: '已导出，去「文件管理」里安装吧', duration: 2500 });
-    } catch (e) {
-      promptAction.showToast({ message: '导出失败: ' + JSON.stringify(e), duration: 2500 });
-      console.error('[About] 导出失败: ' + JSON.stringify(e));
-    } finally {
-      this.saving = false;
-    }
-  }
-
-  private hapFileName(): string {
-    const idx: number = this.savedPath.lastIndexOf('/');
-    return idx >= 0 ? this.savedPath.substring(idx + 1) : this.savedPath;
-  }
-
-  private getCtx(): common.Context | null {
-    try {
-      return getContext(this) as common.Context;
-    } catch (e) {
-      console.error('[About] 取 context 失败: ' + JSON.stringify(e));
-      return null;
-    }
+    this.openUrl(ri.hapUrl.length > 0 ? ri.hapUrl : ri.pageUrl);
   }
 
   private async openUrl(url: string): Promise<void> {

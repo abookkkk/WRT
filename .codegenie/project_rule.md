@@ -574,11 +574,17 @@ private onPullRefresh(): void {
    而不是 tag —— 拿它当版本号会解析出 `[0,0,3]`，跟本机 `[1,0,3]` 一比就以为"已是最新"、**新版本被漏掉**；
    tag 要从 `<link href="…/releases/tag/<tag>">` 里取。
 
-另外两条与安装有关的硬事实：
+**更新包怎么下载（需求变更后：App 不自己下载）**
 
-- **普通应用没有静默安装权限**（`bundle.installer` 是系统 API + `INSTALL_BUNDLE`），只能「下载 → 用系统文件选择器导出 → 用户手动装」。
-- 下载完**必须校验**：实测把 404 的 9 字节错误正文当成了下载成功（`requestInStream` 的状态码回调常常在
-  `dataEnd` **之后**才来）。现在会等 400ms 拿状态码，并比对预期字节数。
+- 发现新版本只弹确认框，用户点「去浏览器下载」后 `startAbility`（`action: ohos.want.action.viewData` + `uri`）
+  打开**系统浏览器**（模拟器上是 `com.huawei.hmos.browser`），下载与安装都由浏览器/文件管理完成 ——
+  App 不落盘、不导出、不安装。所以「普通应用没有静默安装权限」（`bundle.installer` 是系统 API + `INSTALL_BUNDLE`）
+  这件事不影响本流程。
+- ⚠️ 直接附件地址（`releases/download/<tag>/<name>.hap`）在浏览器里会**再确认一次**（文件名 / 大小 / 立即下载），
+  这是预期行为，不是 bug。原子兜底路径拼出来的地址也验证过可用。
+- 曾经实现过「App 内 `requestInStream` 流式下载 + 进度 + 系统文件选择器导出」，后来按要求删掉了；
+  那时的坑仍值得记：`requestInStream` 的**状态码回调常晚于 `dataEnd`**，不等一下就校验的话，
+  会把 404 的 9 字节错误正文当成下载成功（必须比对预期字节数）。
 
 ### 13. 全屏沉浸式：内容能滚到状态栏 / 手势条后面
 

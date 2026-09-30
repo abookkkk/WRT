@@ -13,7 +13,6 @@
 
 import http from '@ohos.net.http';
 import { BusinessError } from '@kit.BasicServicesKit';
-import fs from '@ohos.file.fs';
 
 /** 仓库坐标（关于页的联系方式 / 更新都指向这里） */
 export const REPO_OWNER: string = 'abookkkk';
@@ -233,123 +232,6 @@ export class UpdateChecker {
     out = out.split('&#39;').join("'");
     out = out.split('&amp;').join('&');
     return out;
-  }
-
-  /**
-   * 把 HAP 下到 dir 里（已存在同名文件就先删掉）。
-   * @returns 成功返回本地完整路径，失败返回空串
-   */
-  async downloadHap(ri: ReleaseInfo, dir: string, onProgress: (received: number, total: number) => void): Promise<string> {
-    if (ri.hapUrl.length === 0 || ri.hapName.length === 0) {
-      console.error('[UpdateChecker] 这个 release 没有 .hap 附件');
-      return '';
-    }
-    const path: string = dir + '/' + ri.hapName;
-    let file: fs.File | null = null;
-    try {
-      if (!fs.accessSync(dir)) {
-        fs.mkdirSync(dir, true);
-      }
-      if (fs.accessSync(path)) {
-        fs.unlinkSync(path);
-      }
-      file = fs.openSync(path, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE | fs.OpenMode.TRUNC);
-    } catch (e) {
-      console.error('[UpdateChecker] 准备文件失败: ' + JSON.stringify(e));
-      return '';
-    }
-
-    const fd: number = file.fd;
-    const total: number = ri.hapSize;
-
-    return new Promise<string>((resolve) => {
-      const client: http.HttpRequest = http.createHttp();
-      let received: number = 0;
-      let settled: boolean = false;
-      /** requestInStream 的状态码回调往往在 dataEnd 之后才来，所以先记下来、缓一下再定成败 */
-      let status: number = 0;
-
-      const finish = (ok: boolean, errMsg: string): void => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        client.off('dataReceive');
-        client.off('dataEnd');
-        client.destroy();
-        try {
-          fs.closeSync(fd);
-        } catch (e) {
-          console.warn('[UpdateChecker] 关闭文件失败: ' + JSON.stringify(e));
-        }
-        if (ok) {
-          console.info('[UpdateChecker] 下载完成: ' + path + '（' + String(received) + ' 字节）');
-          resolve(path);
-          return;
-        }
-        console.error('[UpdateChecker] 下载失败: ' + errMsg);
-        // 删掉半个文件，下次重下
-        try {
-          if (fs.accessSync(path)) {
-            fs.unlinkSync(path);
-          }
-        } catch (e) {
-          console.warn('[UpdateChecker] 清理残文件失败: ' + JSON.stringify(e));
-        }
-        resolve('');
-      };
-
-      client.on('dataReceive', (chunk: ArrayBuffer) => {
-        try {
-          fs.writeSync(fd, chunk);
-        } catch (e) {
-          finish(false, '写文件失败: ' + JSON.stringify(e));
-          return;
-        }
-        received = received + chunk.byteLength;
-        onProgress(received, total);
-      });
-
-      client.on('dataEnd', () => {
-        // 等 400ms 让状态码回调先到，再一起判断：
-        //   ① 非 2xx 一律算失败（实测私有仓库的附件会回 404，正文只有 9 字节 "Not Found"）
-        //   ② 有预期大小时，字节数对不上也算失败（防止把错误页当成了安装包）
-        setTimeout(() => {
-          if (status !== 0 && (status < 200 || status >= 300)) {
-            finish(false, 'HTTP ' + status);
-            return;
-          }
-          if (total > 0 && received < total) {
-            finish(false, '只下到 ' + String(received) + '/' + String(total) + ' 字节');
-            return;
-          }
-          finish(true, '');
-        }, 400);
-      });
-
-      const headers: Record<string, string> = {
-        'User-Agent': API_UA,
-        'Accept': 'application/octet-stream'
-      };
-      const options: http.HttpRequestOptions = {
-        method: http.RequestMethod.GET,
-        header: headers,
-        connectTimeout: 10000,
-        readTimeout: 120000,
-        maxRedirects: 5,
-        usingCache: false
-      };
-      client.requestInStream(ri.hapUrl, options, (err: BusinessError | null, code: number) => {
-        if (err) {
-          finish(false, err.message);
-          return;
-        }
-        status = code;
-        if (code < 200 || code >= 300) {
-          finish(false, 'HTTP ' + code);
-        }
-      });
-    });
   }
 
   /**

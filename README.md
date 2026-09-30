@@ -20,7 +20,7 @@
 - **OpenClash**（🧊 **已冻结，不再迭代**）—— 运行状态、内核版本、运行模式、HTTP 端口、是否允许局域网；**策略组与节点切换**（含各节点延迟）；一键重启。
   其它页面可以只读复用它的数据，但不再改动本页、也不新增 Clash 功能
 - **深色模式** —— 顶部「跟随系统 / 深色 / 浅色」三态按钮，点一下循环切换并本地记住；选「跟随系统」时系统切深浅色，App 立即跟着变（含状态栏/导航栏图标配色）
-- **关于（二级页面）** —— 主页右上角 ⓘ 进入：应用版本 / bundleName、**联系方式**（GitHub @abookkkk、项目仓库、Issues、Releases，点了用系统浏览器打开）、**检查更新**（调 GitHub Releases API 比对版本，有新版本就**自动下载** HAP 到应用目录并显示进度，再提供「另存为…」用系统文件选择器导出）
+- **关于（二级页面）** —— 主页右上角 ⓘ 进入：应用版本 / bundleName、**联系方式**（GitHub @abookkkk、项目仓库、Issues、Releases，点了用系统浏览器打开）、**检查更新**（调 GitHub Releases API 比对版本；发现新版本先弹确认框问用户，确认后**跳系统浏览器**下载 —— App 自己不落盘、不安装）
 - **统一的刷新方式** —— 五个 Tab 页只有**下拉刷新**一种手势（页面里不再有「刷新」按钮）：下拉时只显示顶部指示器、页面内容不重建；刷新失败保留屏幕上已有的数据并提示，只有首屏失败才整页换成错误页 + 重试
 
 ---
@@ -146,7 +146,7 @@ entry/src/main/
     │   ├── ThemeSettings.ets        # 外观模式（跟随系统/浅色/深色）+ setColorMode + 系统栏配色
     │   ├── GlobalContext.ets        # 全局 Context 单例
     │   ├── DeviceNotes.ets          # 设备备注（只存本机 preferences，键是 MAC）
-    │   └── UpdateChecker.ets        # 检查更新 / 下载新版本（GitHub Releases API + releases.atom 兜底）
+    │   └── UpdateChecker.ets        # 检查更新（GitHub Releases API + releases.atom 兜底）
     └── pages/
         ├── Index.ets                # 入口：未登录→LoginPage，已登录→HomePage
         ├── LoginPage.ets            # 登录页
@@ -256,6 +256,10 @@ clashInfoRows() { Column() { Row() { Text('版本'); Text(this.version) } } }
       （系统 `BarPosition.End` 栏在全屏后会掉进手势条里，`barHeight` 又会挤压内容区）；
       各页避让走 `AppStorage` 的 `safeTop`/`safeBottom`（`@StorageProp` 读，运行时随避让区变化自动重排）。
       实测：滚动中卡片文字从状态栏后面透出并被虚化 ✓；二级页标题栏也垫了状态栏高度 ✓；切 Tab / 返回都正常 ✓
+
+- [x] **检查更新改成「先问，再跳浏览器」** —— 原来发现新版本就自动下到应用目录、再让用户「另存为」导出。现在：发现新版本 → 弹确认框（「稍后」/「去浏览器下载」）→ 确认后 `startAbility` 跳系统浏览器下载。
+      实测（模拟器 `com.huawei.hmos.browser`）：确认后浏览器弹出自己的下载确认页（`OpenWrt-Manager-v1.0.5-unsigned.hap` / 1.10 MB / 立即下载）✓。
+      App 内的下载/进度/导出/已下载识别那套代码**整段删掉**（不留死代码），`UpdateChecker` 只保留「取最新版本 + 比版本号」
 
 ### 待办
 
