@@ -559,6 +559,27 @@ private onPullRefresh(): void {
    回调属性**不要写 `private`**，否则会多一条 ArkTS 警告。
 6. 不要用 `@ohos.router`：它只能传可序列化参数，`OpenWrtClient` 这种对象传不过去。
 
+### 12. ⚠️ 检查更新走 GitHub Releases：三个坑
+
+「关于」页的检查更新 / 自动下载（`model/UpdateChecker.ets`）踩过的点：
+
+1. **GitHub API 必须带 `User-Agent`**，不带直接 403。
+2. **私有仓库匿名什么都拿不到**：`private=True` 时匿名调 `/repos/...` 是 403、附件下载是 404（正文只有 9 字节 "Not Found"）。
+   本项目一开始仓库是私有的，检查更新因此完全走不通 —— 要么把仓库改 public（现在的做法），
+   要么另开一个 public 的发布仓库；**不要把 token 写进 App**（能被反编译，而且会过期）。
+3. **匿名 API 按 IP 限流 60 次/小时**，而这条链路走代理、出口 IP 与别人共用，很容易用光。
+   所以 `fetchLatest()` 在 API 失败后会退到 **`https://github.com/<owner>/<repo>/releases.atom`**
+   （网页端点，没有这个限制）拿版本号与正文，附件地址按发布惯例拼
+   `OpenWrt-Manager-<tag>-unsigned.hap`。⚠️ atom 的 `<title>` 是 release **名字**（"OpenWrt 管理 v1.0.3"）
+   而不是 tag —— 拿它当版本号会解析出 `[0,0,3]`，跟本机 `[1,0,3]` 一比就以为"已是最新"、**新版本被漏掉**；
+   tag 要从 `<link href="…/releases/tag/<tag>">` 里取。
+
+另外两条与安装有关的硬事实：
+
+- **普通应用没有静默安装权限**（`bundle.installer` 是系统 API + `INSTALL_BUNDLE`），只能「下载 → 用系统文件选择器导出 → 用户手动装」。
+- 下载完**必须校验**：实测把 404 的 9 字节错误正文当成了下载成功（`requestInStream` 的状态码回调常常在
+  `dataEnd` **之后**才来）。现在会等 400ms 拿状态码，并比对预期字节数。
+
 ---
 
 ## 八、构建 / 部署备忘

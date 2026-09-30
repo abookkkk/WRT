@@ -45,6 +45,8 @@ export struct AboutPage {
   /** 下载中 / 进度 0~1 / 下载好的本地路径 */
   @State private downloading: boolean = false;
   @State private progress: number = 0;
+  /** 下载总量（atom 兜底时拿不到，为 0 就不显示百分比） */
+  @State private downloadTotal: number = 0;
   @State private savedPath: string = '';
   @State private saving: boolean = false;
 
@@ -52,6 +54,35 @@ export struct AboutPage {
 
   aboutToAppear(): void {
     this.loadAppInfo();
+    this.detectDownloaded();
+  }
+
+  /** 应用目录里是不是已经有下好的更新包（上次下过、App 重启后）—— 有就把它显示出来，别让用户重下 */
+  private detectDownloaded(): void {
+    const ctx: common.Context | null = this.getCtx();
+    if (ctx === null) {
+      return;
+    }
+    try {
+      const dir: string = ctx.filesDir + '/updates';
+      if (!fs.accessSync(dir)) {
+        return;
+      }
+      const names: string[] = fs.listFileSync(dir);
+      let newest: string = '';
+      for (let i = 0; i < names.length; i++) {
+        if (names[i].endsWith('.hap')) {
+          newest = names[i];
+        }
+      }
+      if (newest.length > 0) {
+        this.savedPath = dir + '/' + newest;
+        this.statusText = '应用目录里已有下载好的更新包';
+        console.info('[About] 发现已下载的更新包: ' + newest);
+      }
+    } catch (e) {
+      console.warn('[About] 检查已下载的更新包失败: ' + JSON.stringify(e));
+    }
   }
 
   build() {
@@ -143,11 +174,15 @@ export struct AboutPage {
           }
 
           if (this.downloading) {
-            Text('正在下载更新包… ' + Math.round(this.progress * 100) + '%')
+            Text(this.downloadTotal > 0
+              ? ('正在下载更新包… ' + Math.round(this.progress * 100) + '%')
+              : '正在下载更新包…（atom 兜底拿不到大小，进度不可知）')
               .fontSize(F_CAPTION).fontColor(C_TEXT_2).width('100%').margin({ top: SP_M });
-            Progress({ value: this.progress * 100, total: 100, type: ProgressType.Linear })
-              .width('100%').height(8).borderRadius(4)
-              .color(C_PRIMARY).margin({ top: SP_S });
+            if (this.downloadTotal > 0) {
+              Progress({ value: this.progress * 100, total: 100, type: ProgressType.Linear })
+                .width('100%').height(8).borderRadius(4)
+                .color(C_PRIMARY).margin({ top: SP_S });
+            }
           }
 
           if (this.savedPath.length > 0) {
@@ -243,7 +278,7 @@ export struct AboutPage {
       const ri: ReleaseInfo | null = await this.checker.fetchLatest();
       if (ri === null) {
         this.statusText = this.checker.lastError.length > 0
-          ? ('检查失败：' + this.checker.lastError)
+          ? ('检查失败：' + this.checker.lastError + '（releases.atom 兜底也没成功）')
           : '检查失败：拉不到 release（没网 / 被限流 / 仓库还没发过 release）';
         return;
       }
@@ -255,7 +290,9 @@ export struct AboutPage {
       }
       this.release = ri;
       this.hasUpdate = true;
-      this.statusText = '发现新版本 ' + ri.tag + '（当前 ' + this.appVersion + '），开始自动下载…';
+      this.statusText = '发现新版本 ' + ri.tag + '（当前 ' + this.appVersion + '）'
+        + (ri.viaAtom ? '［API 限流，版本号来自 releases.atom］' : '')
+        + '，开始自动下载…';
       await this.startDownload(ri);
     } catch (e) {
       this.statusText = '检查异常: ' + JSON.stringify(e);
@@ -275,6 +312,7 @@ export struct AboutPage {
     try {
       const dir: string = ctx.filesDir + '/updates';
       const path: string = await this.checker.downloadHap(ri, dir, (received: number, total: number) => {
+        this.downloadTotal = total;
         this.progress = total > 0 ? Math.min(1, received / total) : 0;
       });
       if (path.length > 0) {

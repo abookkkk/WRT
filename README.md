@@ -20,6 +20,7 @@
 - **OpenClash**（🧊 **已冻结，不再迭代**）—— 运行状态、内核版本、运行模式、HTTP 端口、是否允许局域网；**策略组与节点切换**（含各节点延迟）；一键重启。
   其它页面可以只读复用它的数据，但不再改动本页、也不新增 Clash 功能
 - **深色模式** —— 顶部「跟随系统 / 深色 / 浅色」三态按钮，点一下循环切换并本地记住；选「跟随系统」时系统切深浅色，App 立即跟着变（含状态栏/导航栏图标配色）
+- **关于（二级页面）** —— 主页右上角 ⓘ 进入：应用版本 / bundleName、**联系方式**（GitHub @abookkkk、项目仓库、Issues、Releases，点了用系统浏览器打开）、**检查更新**（调 GitHub Releases API 比对版本，有新版本就**自动下载** HAP 到应用目录并显示进度，再提供「另存为…」用系统文件选择器导出）
 - **统一的刷新方式** —— 五个 Tab 页只有**下拉刷新**一种手势（页面里不再有「刷新」按钮）：下拉时只显示顶部指示器、页面内容不重建；刷新失败保留屏幕上已有的数据并提示，只有首屏失败才整页换成错误页 + 重试
 
 ---
@@ -144,12 +145,14 @@ entry/src/main/
     │   ├── SessionStore.ets         # 会话本地持久化
     │   ├── ThemeSettings.ets        # 外观模式（跟随系统/浅色/深色）+ setColorMode + 系统栏配色
     │   ├── GlobalContext.ets        # 全局 Context 单例
-    │   └── DeviceNotes.ets          # 设备备注（只存本机 preferences，键是 MAC）
+    │   ├── DeviceNotes.ets          # 设备备注（只存本机 preferences，键是 MAC）
+    │   └── UpdateChecker.ets        # 检查更新 / 下载新版本（GitHub Releases API + releases.atom 兜底）
     └── pages/
         ├── Index.ets                # 入口：未登录→LoginPage，已登录→HomePage
         ├── LoginPage.ets            # 登录页
         ├── HomePage.ets             # Tabs 容器（4 个 Tab）+ 二级页面栈（Navigation / NavDestination）
         ├── DashboardPage.ets        # 仪表盘
+        ├── AboutPage.ets            # 关于（版本 / 联系方式 / 检查更新并下载）
         ├── NetworkPage.ets          # 网络接口
         ├── WifiPage.ets             # 无线网络（射频开关 / SSID / 密码 / 隐藏 / 客户端踢出 / 扫描）
         ├── DevicesPage.ets          # 在线设备（二级页面，从仪表盘卡片进入）
@@ -235,6 +238,13 @@ clashInfoRows() { Column() { Row() { Text('版本'); Text(this.version) } } }
 - [x] **换了 bundleName** —— `com.example.myapplication` → **`com.abookkkk.wrt`**（正式发布前必须把默认包名换掉）
       ⚠️ 换包名等于换了一个 App：**旧包的本地数据不会跟过来**（登录 session、设备备注、外观设置都在各自的沙箱里），
       装新版后要重新登录、备注重写；旧包可以直接卸载
+
+- [x] **「关于」页 + 检查更新** —— 右上角 ⓘ 进入：版本号 / bundleName、GitHub 联系方式、检查更新并**自动下载**新 HAP（下到应用目录，带进度，「另存为…」走系统文件选择器导出）。
+      过程中有三条实测结论：① **仓库原本是私有的**，匿名看不到 release、附件也 404（已改成 public）；
+      ② 匿名调 GitHub API **按 IP 每小时 60 次**，而这条链路走代理、出口 IP 与别人共用，很快就用光 → 现在会读
+      `releases.atom`（网页端点，不吃 API 限流）兜底拿版本号，并按发布惯例拼附件地址；
+      ③ 鸿蒙普通应用**没有静默安装权限**（`bundle.installer` 是系统 API），且 HAP 未签名（真机要自己签名）——
+      所以只能「下载 → 导出 → 手动装」，页面里写明了。实测：下载到 976,897 字节（与发布物一致）、「另存为」能拉起系统保存面板
 
 ### 待办
 

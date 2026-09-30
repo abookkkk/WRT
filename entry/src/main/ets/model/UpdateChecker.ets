@@ -56,6 +56,8 @@ export class ReleaseInfo {
   hapName: string = '';
   hapUrl: string = '';
   hapSize: number = 0;
+  /** 是不是走 releases.atom 兜底拿到的（附件大小拿不到，界面上说明一下） */
+  viaAtom: boolean = false;
 }
 
 export class UpdateChecker {
@@ -91,7 +93,14 @@ export class UpdateChecker {
           const body: string = String(data.result || '');
           console.error('[UpdateChecker] HTTP ' + code + ' body=' + body.substring(0, 200));
           this.lastError = UpdateChecker.describeError(code, body, data.header);
-          resolve(null);
+          // API 走不通（限流 / 私有…）就退一步读 releases.atom：
+          // 那是网页端点、按 IP 也没有 60 次/小时的限制，至少能把版本号拿到。
+          this.fetchLatestFromAtom().then((alt: ReleaseInfo | null) => {
+            if (alt !== null) {
+              console.warn('[UpdateChecker] API 不可用，已用 releases.atom 兜底');
+            }
+            resolve(alt);
+          });
           return;
         }
         try {
@@ -121,6 +130,109 @@ export class UpdateChecker {
         }
       });
     });
+  }
+
+  /**
+   * 兜底：读 `releases.atom`（GitHub 的网页端点，不吃 API 那 60 次/小时的限流）。
+   * 拿得到 tag / 时间 / 正文，**拿不到附件列表** —— 所以下载地址按本仓库的发布惯例拼：
+   * `OpenWrt-Manager-<tag>-unsigned.hap`（publish.py 就是这么命名的）。拼错了下载会失败并提示手动下载。
+   */
+  private fetchLatestFromAtom(): Promise<ReleaseInfo | null> {
+    return new Promise<ReleaseInfo | null>((resolve) => {
+      const client: http.HttpRequest = http.createHttp();
+      const headers: Record<string, string> = {
+        'User-Agent': API_UA,
+        'Accept': 'application/atom+xml'
+      };
+      const options: http.HttpRequestOptions = {
+        method: http.RequestMethod.GET,
+        header: headers,
+        connectTimeout: 10000,
+        readTimeout: 20000,
+        maxRedirects: 5,
+        usingCache: false
+      };
+      const url: string = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases.atom`;
+      client.request(url, options, (err: BusinessError | null, data: http.HttpResponse) => {
+        client.destroy();
+        if (err) {
+          console.error('[UpdateChecker] atom 请求失败: ' + err.message);
+          resolve(null);
+          return;
+        }
+        const code: number = data.responseCode;
+        if (code < 200 || code >= 300) {
+          console.error('[UpdateChecker] atom HTTP ' + code);
+          resolve(null);
+          return;
+        }
+        try {
+          const xml: string = String(data.result || '');
+          const entryMatch: RegExpMatchArray | null = xml.match(/<entry>([\s\S]*?)<\/entry>/);
+          if (entryMatch === null) {
+            console.error('[UpdateChecker] atom 里没有 entry（还没发过 release？）');
+            resolve(null);
+            return;
+          }
+          const entry: string = entryMatch[1];
+          const tagMatch: RegExpMatchArray | null = entry.match(/<title>([^<]*)<\/title>/);
+          const linkMatch: RegExpMatchArray | null = entry.match(/<link[^>]*href="([^"]+)"/);
+          const dateMatch: RegExpMatchArray | null = entry.match(/<updated>([^<]*)<\/updated>/);
+          const contentMatch: RegExpMatchArray | null = entry.match(/<content[^>]*>([\s\S]*?)<\/content>/);
+
+          // ⚠️ atom 的 <title> 是 release **名字**（"OpenWrt 管理 v1.0.3"），不是 tag！
+          // 拿它当版本号会解析出 [0,0,3]，跟本机的 [1,0,3] 一比就以为"已是最新"，
+          // **新版本会被漏掉**。所以 tag 从 <link href="…/releases/tag/<tag>"> 里取。
+          const link: string = linkMatch !== null ? linkMatch[1] : '';
+          const title: string = tagMatch !== null ? tagMatch[1].trim() : '';
+          let tag: string = '';
+          const tagFromLink: RegExpMatchArray | null = link.match(/\/releases\/tag\/([^\/]+)$/);
+          if (tagFromLink !== null) {
+            tag = decodeURIComponent(tagFromLink[1]).trim();
+          }
+          if (tag.length === 0) {
+            // 退一步：标题里找形如 v1.2.3 的片段
+            const tagFromTitle: RegExpMatchArray | null = title.match(/v?\d+(\.\d+)+/);
+            if (tagFromTitle !== null) {
+              tag = tagFromTitle[0];
+            }
+          }
+          if (tag.length === 0) {
+            console.error('[UpdateChecker] atom 里取不到 tag');
+            resolve(null);
+            return;
+          }
+
+          const out: ReleaseInfo = new ReleaseInfo();
+          out.tag = tag;
+          out.version = UpdateChecker.stripV(tag);
+          out.name = title.length > 0 ? title : tag;
+          out.publishedAt = dateMatch !== null ? dateMatch[1].trim() : '';
+          out.notes = contentMatch !== null ? UpdateChecker.decodeEntities(contentMatch[1]).trim() : '';
+          out.pageUrl = linkMatch !== null ? linkMatch[1] : REPO_RELEASES_URL;
+          out.hapName = 'OpenWrt-Manager-' + out.tag + '-unsigned.hap';
+          out.hapUrl = `https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${out.tag}/${out.hapName}`;
+          out.hapSize = 0;
+          out.viaAtom = true;
+          console.info('[UpdateChecker] atom 兜底拿到 ' + out.tag);
+          resolve(out);
+        } catch (e) {
+          console.error('[UpdateChecker] 解析 atom 失败: ' + JSON.stringify(e));
+          resolve(null);
+        }
+      });
+    });
+  }
+
+  /** atom 的正文是 HTML 转义过的，解一下常用的几个实体 */
+  private static decodeEntities(s: string): string {
+    let out: string = s;
+    out = out.split('&lt;').join('<');
+    out = out.split('&gt;').join('>');
+    out = out.split('&quot;').join('"');
+    out = out.split('&#39;').join("'");
+    out = out.split('&amp;').join('&');
+    return out;
   }
 
   /**
