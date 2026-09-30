@@ -22,6 +22,7 @@ import { DashboardPage } from './DashboardPage';
 import { NetworkPage } from './NetworkPage';
 import { WifiPage } from './WifiPage';
 import { DevicesPage } from './DevicesPage';
+import { AboutPage } from './AboutPage';
 
 import { OpenClashPage } from './OpenClashPage';
 import {
@@ -143,7 +144,21 @@ export struct HomePage {
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1);
 
-            // ===== 外观切换按钮：跟随系统 / 深色 / 浅色，点一下循环 =====
+            // ===== 关于（二级页面：版本 / 联系方式 / 检查更新）=====
+          Button() {
+            SymbolGlyph($r('sys.symbol.info_circle'))
+              .fontSize(ICON_M)
+              .fontColor([C_TEXT_2])
+              .renderingStrategy(SymbolRenderingStrategy.SINGLE);
+          }
+          .height(32)
+          .type(ButtonType.Capsule)
+          .backgroundColor(C_FILL)
+          .padding({ left: SP_M, right: SP_M })
+          .margin({ right: SP_S })
+          .onClick(() => this.openAbout());
+
+          // ===== 外观切换按钮：跟随系统 / 深色 / 浅色，点一下循环 =====
             Button() {
               Row() {
                 if (this.appearance === 'light') {
@@ -260,6 +275,11 @@ export struct HomePage {
     this.pathStack.pushPathByName('devices', null);
   }
 
+  /** 打开二级页面：关于（版本 / 联系方式 / 检查更新） */
+  private openAbout(): void {
+    this.pathStack.pushPathByName('about', null);
+  }
+
 
   /**
    * 页面栈分发。Navigation 的 navDestination 只回调页面名，
@@ -269,6 +289,8 @@ export struct HomePage {
   pageMap(name: string) {
     if (name === 'devices') {
       this.devicesDestination();
+    } else if (name === 'about') {
+      this.aboutDestination();
     }
   }
 
@@ -344,6 +366,30 @@ export struct HomePage {
     .hideTitleBar(true);
   }
 
+  /** 二级页面：关于（版本信息 / 联系方式 / 检查更新并自动下载） */
+  @Builder
+  aboutDestination() {
+    NavDestination() {
+      Stack({ alignContent: Alignment.TopStart }) {
+        this.navBackground();
+
+        Column() {
+          this.navTitleBar('关于');
+
+          Column() {
+            AboutPage()
+          }
+          .layoutWeight(1)
+          .width('100%');
+        }
+        .width('100%')
+        .height('100%');
+      }
+      .width('100%')
+      .height('100%');
+    }
+    .hideTitleBar(true);
+  }
 
   /**
    * 自定义 Tab 项：系统符号图标 + 文字，选中态用主色。
