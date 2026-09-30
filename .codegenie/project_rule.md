@@ -55,6 +55,16 @@
 3. **匿名 session id 是 32 个 0**：`00000000000000000000000000000000`，只有 `session.login` 能用它。
 4. **登录**：`session.login`，参数 `{"username":"root","password":"..."}`，成功返回 `ubus_rpc_session`（32 位）和 `timeout`（300 秒）。
 
+> ⚠️ **两种失败形态必须分开处理**（本项目踩过，也是"登录过期"被显示成"请求异常"的根因）：
+> - `{"result":[<code>, ...]}` 且 `code != 0` —— **ubus 层**错误（4=参数错、6=权限/路径不在白名单）；
+> - `{"error":{"code":-32002,"message":"Access denied"}}` —— **JSON-RPC 层**错误，
+>   **会话过期就是这一种**，此时**根本没有 result 字段**；只读 `result[0]` 会抛异常，
+>   被 catch 成"请求异常: Cannot read property '0' of undefined"，既看不出是过期、也没法统一处理。
+>   实测：匿名 session、乱写的 session id、rpcd 重启后的旧 session，调任何业务方法都是这个形状。
+> - 判定"登录已过期"就用 `error.code === -32002`；处理方式：清本地 session → 回登录页（密码不落地，无法自动重登）。
+> - `session.list` 也被拒（-32002），没法枚举/销毁别人的 session；想制造过期只能重启 rpcd
+>   （`rc.init {"name":"rpcd","action":"restart"}`，会废掉所有 session），或等 300 秒空闲超时。
+
 ---
 
 ## 三、ubus 权限白名单（实测，非常重要）
