@@ -43,6 +43,8 @@ export struct DashboardPage {
   private client!: OpenWrtClient;
   /** 点「在线设备」卡片 → 打开二级页面（由 HomePage 传入） */
   onOpenDevices: () => void = () => {};
+  /** 点「实时网速」卡片 → 打开「测网速」二级页面 */
+  onOpenSpeedTest: () => void = () => {};
 
   @State private isLoading: boolean = true;
   @State private deviceModel: string = '--';
@@ -109,14 +111,23 @@ export struct DashboardPage {
         Refresh({ refreshing: this.isRefreshing }) {
           Scroll() {
             Column() {
-              // ===== 卡片 0：实时网速 + 60 秒趋势图 =====
+              // ===== 卡片 0：实时网速 + 60 秒趋势图（点进去是「测网速」二级页面）=====
               Column() {
-                Text('实时网速')
-                  .fontSize(F_SECTION)
-                  .fontWeight(FontWeight.Bold)
-                  .fontColor(C_TEXT_1)
-                  .width('100%')
-                  .margin({ bottom: SP_M });
+                Row() {
+                  Text('实时网速')
+                    .fontSize(F_SECTION)
+                    .fontWeight(FontWeight.Bold)
+                    .fontColor(C_TEXT_1)
+                    .layoutWeight(1);
+                  // 右侧箭头表示"点得进去"
+                  SymbolGlyph($r('sys.symbol.chevron_right'))
+                    .fontSize(ICON_S)
+                    .fontColor([C_TEXT_3])
+                    .renderingStrategy(SymbolRenderingStrategy.SINGLE);
+                }
+                .width('100%')
+                .alignItems(VerticalAlign.Center)
+                .margin({ bottom: SP_M });
 
                 Row() {
                   // 下行
@@ -183,7 +194,8 @@ export struct DashboardPage {
               }
               .width('100%').padding(SP_XL).backgroundColor(C_CARD)
               .borderRadius(R_CARD).shadow(ShadowStyle.OUTER_DEFAULT_SM)
-              .margin({ bottom: 14 });
+              .margin({ bottom: 14 })
+              .onClick(() => this.onOpenSpeedTest());
 
               // 卡片 1：路由器信息
               Column() {

@@ -22,6 +22,7 @@ import { DashboardPage } from './DashboardPage';
 import { NetworkPage } from './NetworkPage';
 import { WifiPage } from './WifiPage';
 import { DevicesPage } from './DevicesPage';
+import { SpeedTestPage } from './SpeedTestPage';
 import { OpenClashPage } from './OpenClashPage';
 import {
   C_PRIMARY, C_BG_TOP, C_BG_MID, C_BG_BOTTOM, C_TEXT_1, C_TEXT_2, C_TEXT_3, C_DANGER,
@@ -190,7 +191,11 @@ export struct HomePage {
           // ===== Tab 内容 =====
           Tabs({ barPosition: BarPosition.End }) {
             TabContent() {
-              DashboardPage({ client: this.client, onOpenDevices: () => this.openDevices() })
+              DashboardPage({
+                client: this.client,
+                onOpenDevices: () => this.openDevices(),
+                onOpenSpeedTest: () => this.openSpeedTest()
+              })
             }
             .tabBar(this.tabItem(0, '仪表盘'))
 
@@ -259,6 +264,11 @@ export struct HomePage {
     this.pathStack.pushPathByName('devices', null);
   }
 
+  /** 打开二级页面：测网速 */
+  private openSpeedTest(): void {
+    this.pathStack.pushPathByName('speedtest', null);
+  }
+
   /**
    * 页面栈分发。Navigation 的 navDestination 只回调页面名，
    * 所以在这里按 name 选页面（目前只有一个）。
@@ -267,58 +277,95 @@ export struct HomePage {
   pageMap(name: string) {
     if (name === 'devices') {
       this.devicesDestination();
+    } else if (name === 'speedtest') {
+      this.speedTestDestination();
     }
+  }
+
+  /** 二级页面通用背景：标签栏被盖住了，得自己铺一层渐变（含状态栏 / 手势条区域） */
+  @Builder
+  navBackground() {
+    Column()
+      .width('100%')
+      .height('100%')
+      .linearGradient({
+        angle: 180,
+        colors: [[C_BG_TOP, 0.0], [C_BG_MID, 0.35], [C_BG_BOTTOM, 1.0]]
+      })
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
+  }
+
+  /** 二级页面通用标题栏：返回 + 标题（两个二级页共用，样式一致） */
+  @Builder
+  navTitleBar(title: string) {
+    Row() {
+      Button() {
+        SymbolGlyph($r('sys.symbol.chevron_left'))
+          .fontSize(ICON_M)
+          .fontColor([C_TEXT_1])
+          .renderingStrategy(SymbolRenderingStrategy.SINGLE);
+      }
+      .height(32)
+      .type(ButtonType.Capsule)
+      .backgroundColor(C_FILL)
+      .padding({ left: SP_M, right: SP_M })
+      .onClick(() => this.pathStack.pop());
+
+      Text(title)
+        .fontSize(F_SECTION)
+        .fontWeight(FontWeight.Bold)
+        .fontColor(C_TEXT_1)
+        .layoutWeight(1)
+        .margin({ left: SP_M });
+    }
+    .width('100%')
+    .padding({ left: SP_L, right: SP_L, top: SP_S, bottom: SP_S })
+    .alignItems(VerticalAlign.Center);
   }
 
   /**
    * 二级页面：在线设备（从仪表盘「在线设备」卡片点进来）。
    *
-   * 推入的 NavDestination 会整页盖住标签栏，所以这里得自己铺渐变背景（含状态栏 / 手势条区域）
-   * 和自己的标题栏：返回按钮走 pathStack.pop()，系统返回键与侧滑返回由 Navigation 负责。
+   * 推入的 NavDestination 会整页盖住标签栏，所以背景和标题栏都自己来：
+   * 返回按钮走 pathStack.pop()，系统返回键与侧滑返回由 Navigation 负责。
    */
   @Builder
   devicesDestination() {
     NavDestination() {
       Stack({ alignContent: Alignment.TopStart }) {
-        // 背景：和主页同一套渐变，且铺满状态栏与手势条区域
-        Column()
-          .width('100%')
-          .height('100%')
-          .linearGradient({
-            angle: 180,
-            colors: [[C_BG_TOP, 0.0], [C_BG_MID, 0.35], [C_BG_BOTTOM, 1.0]]
-          })
-          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
+        this.navBackground();
 
         Column() {
-          // ===== 标题栏：返回 + 标题 =====
-          Row() {
-            Button() {
-              SymbolGlyph($r('sys.symbol.chevron_left'))
-                .fontSize(ICON_M)
-                .fontColor([C_TEXT_1])
-                .renderingStrategy(SymbolRenderingStrategy.SINGLE);
-            }
-            .height(32)
-            .type(ButtonType.Capsule)
-            .backgroundColor(C_FILL)
-            .padding({ left: SP_M, right: SP_M })
-            .onClick(() => this.pathStack.pop());
+          this.navTitleBar('在线设备');
 
-            Text('在线设备')
-              .fontSize(F_SECTION)
-              .fontWeight(FontWeight.Bold)
-              .fontColor(C_TEXT_1)
-              .layoutWeight(1)
-              .margin({ left: SP_M });
-          }
-          .width('100%')
-          .padding({ left: SP_L, right: SP_L, top: SP_S, bottom: SP_S })
-          .alignItems(VerticalAlign.Center);
-
-          // ===== 设备列表（复用在线设备页本体） =====
+          // 设备列表（复用在线设备页本体）
           Column() {
             DevicesPage({ client: this.client })
+          }
+          .layoutWeight(1)
+          .width('100%');
+        }
+        .width('100%')
+        .height('100%');
+      }
+      .width('100%')
+      .height('100%');
+    }
+    .hideTitleBar(true);
+  }
+
+  /** 二级页面：测网速（从仪表盘「实时网速」卡片点进来） */
+  @Builder
+  speedTestDestination() {
+    NavDestination() {
+      Stack({ alignContent: Alignment.TopStart }) {
+        this.navBackground();
+
+        Column() {
+          this.navTitleBar('测网速');
+
+          Column() {
+            SpeedTestPage()
           }
           .layoutWeight(1)
           .width('100%');
