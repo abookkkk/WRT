@@ -151,6 +151,25 @@ export struct HomePage {
     }
   }
 
+  /** 胶囊内一项的宽度：药丸宽度与位移都用它 */
+  private pillWidth(): number {
+    const inner: number = this.capsuleWidth - CAPSULE_PAD * 2;
+    return inner > 0 ? inner / 4 : 0;
+  }
+
+  /** 药丸的 x：拖动时跟随手指（居中于指尖），松手后对齐当前项 —— 这就是"液态"的来源 */
+  private pillX(): number {
+    const w: number = this.pillWidth();
+    if (w <= 0) {
+      return CAPSULE_PAD;
+    }
+    if (this.capsuleDragging) {
+      const raw: number = this.capsuleFingerX - w / 2;
+      return raw < CAPSULE_PAD ? CAPSULE_PAD : (raw > CAPSULE_PAD + w * 3 ? CAPSULE_PAD + w * 3 : raw);
+    }
+    return CAPSULE_PAD + w * this.currentIndex;
+  }
+
   /** 切 Tab（自绘悬浮标签栏用） */
   private switchTab(index: number): void {
     if (index === this.currentIndex) {
@@ -309,13 +328,24 @@ export struct HomePage {
             //   · 想只把栏往上抬：barHeight 只会让栏变高、连带把内容区往上挤（内容就没法从栏下滚过了）；
             //   · 自绘这条：浮在内容之上、底部让开手势条，卡片能从它下面滚过去并被虚化。
             Row() {
+              // 「液态」药丸：一整块（不是每项各自一块），拖动时跟着指尖滑、松手吸附到最近一项。
+              // duration=0 保证跟手不延迟，松手后用 Friction 曲线滑过去
+              Column()
+                .width(this.pillWidth())
+                .height(TAB_ITEM_HEIGHT)
+                .borderRadius(TAB_ITEM_HEIGHT / 2)
+                .backgroundColor(C_PRIMARY_SOFT)
+                .position({ x: this.pillX(), y: CAPSULE_PAD })
+                .animation(this.capsuleDragging
+                  ? { duration: 0 }
+                  : { duration: 340, curve: Curve.Friction })
+                .hitTestBehavior(HitTestMode.None)
+
               Column() {
                 this.tabItem(0, '仪表盘')
               }
               .height(TAB_ITEM_HEIGHT)
               .layoutWeight(1)
-              .borderRadius(TAB_ITEM_HEIGHT / 2)
-              .backgroundColor(this.currentIndex === 0 ? C_PRIMARY_SOFT : Color.Transparent)
               .onClick(() => this.switchTab(0));
 
               Column() {
@@ -323,8 +353,6 @@ export struct HomePage {
               }
               .height(TAB_ITEM_HEIGHT)
               .layoutWeight(1)
-              .borderRadius(TAB_ITEM_HEIGHT / 2)
-              .backgroundColor(this.currentIndex === 1 ? C_PRIMARY_SOFT : Color.Transparent)
               .onClick(() => this.switchTab(1));
 
               Column() {
@@ -332,8 +360,6 @@ export struct HomePage {
               }
               .height(TAB_ITEM_HEIGHT)
               .layoutWeight(1)
-              .borderRadius(TAB_ITEM_HEIGHT / 2)
-              .backgroundColor(this.currentIndex === 2 ? C_PRIMARY_SOFT : Color.Transparent)
               .onClick(() => this.switchTab(2));
 
               Column() {
@@ -341,22 +367,20 @@ export struct HomePage {
               }
               .height(TAB_ITEM_HEIGHT)
               .layoutWeight(1)
-              .borderRadius(TAB_ITEM_HEIGHT / 2)
-              .backgroundColor(this.currentIndex === 3 ? C_PRIMARY_SOFT : Color.Transparent)
               .onClick(() => this.switchTab(3));
 
               // 「光感」：跟着手指位置的一团柔光（绝对定位、不参与布局，松手即消失）
               if (this.capsuleDragging) {
                 Column()
-                  .width(150)
+                  .width(190)
                   .height(TAB_ITEM_HEIGHT)
                   .borderRadius(TAB_ITEM_HEIGHT / 2)
                   .radialGradient({
                     center: ['50%', '50%'],
-                    radius: 75,
-                    colors: [['#59FFFFFF', 0.0], ['#00FFFFFF', 1.0]]
+                    radius: 95,
+                    colors: [['#66FFFFFF', 0.0], ['#00FFFFFF', 1.0]]
                   })
-                  .position({ x: this.capsuleFingerX - 75, y: CAPSULE_PAD })
+                  .position({ x: this.capsuleFingerX - 95, y: CAPSULE_PAD })
                   .hitTestBehavior(HitTestMode.None)
               }
             }
