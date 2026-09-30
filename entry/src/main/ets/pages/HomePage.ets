@@ -22,7 +22,7 @@ import { DashboardPage } from './DashboardPage';
 import { NetworkPage } from './NetworkPage';
 import { WifiPage } from './WifiPage';
 import { DevicesPage } from './DevicesPage';
-import { SpeedTestPage } from './SpeedTestPage';
+
 import { OpenClashPage } from './OpenClashPage';
 import {
   C_PRIMARY, C_BG_TOP, C_BG_MID, C_BG_BOTTOM, C_TEXT_1, C_TEXT_2, C_TEXT_3, C_DANGER,
@@ -191,11 +191,7 @@ export struct HomePage {
           // ===== Tab 内容 =====
           Tabs({ barPosition: BarPosition.End }) {
             TabContent() {
-              DashboardPage({
-                client: this.client,
-                onOpenDevices: () => this.openDevices(),
-                onOpenSpeedTest: () => this.openSpeedTest()
-              })
+              DashboardPage({ client: this.client, onOpenDevices: () => this.openDevices() })
             }
             .tabBar(this.tabItem(0, '仪表盘'))
 
@@ -264,10 +260,6 @@ export struct HomePage {
     this.pathStack.pushPathByName('devices', null);
   }
 
-  /** 打开二级页面：测网速 */
-  private openSpeedTest(): void {
-    this.pathStack.pushPathByName('speedtest', null);
-  }
 
   /**
    * 页面栈分发。Navigation 的 navDestination 只回调页面名，
@@ -277,8 +269,6 @@ export struct HomePage {
   pageMap(name: string) {
     if (name === 'devices') {
       this.devicesDestination();
-    } else if (name === 'speedtest') {
-      this.speedTestDestination();
     }
   }
 
@@ -354,30 +344,6 @@ export struct HomePage {
     .hideTitleBar(true);
   }
 
-  /** 二级页面：测网速（从仪表盘「实时网速」卡片点进来） */
-  @Builder
-  speedTestDestination() {
-    NavDestination() {
-      Stack({ alignContent: Alignment.TopStart }) {
-        this.navBackground();
-
-        Column() {
-          this.navTitleBar('测网速');
-
-          Column() {
-            SpeedTestPage()
-          }
-          .layoutWeight(1)
-          .width('100%');
-        }
-        .width('100%')
-        .height('100%');
-      }
-      .width('100%')
-      .height('100%');
-    }
-    .hideTitleBar(true);
-  }
 
   /**
    * 自定义 Tab 项：系统符号图标 + 文字，选中态用主色。
@@ -418,6 +384,7 @@ export struct HomePage {
     .height('100%')
     .justifyContent(FlexAlign.Center);
   }
+
 
   private async handleLogout(): Promise<void> {
     const result = await promptAction.showDialog({

@@ -569,7 +569,7 @@ export class OpenWrtClient {
    */
   async setOpenClashMode(mode: string): Promise<boolean> {
     const setResult: UbusResult<Object> = await this.ubusCallAuth<Object>(
-      'uci', 'set', json(`{"config":"openclash","section":"config","values":{"proxy_mode":"${mode}"}}`)
+      'uci', 'set', uciSetBody('openclash', 'config', 'proxy_mode', JSON.stringify(mode))
     );
     if (!setResult.success) {
       return false;

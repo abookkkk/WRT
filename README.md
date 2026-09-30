@@ -12,7 +12,7 @@
 
 - **登录与会话持久化** —— 用 `@ohos.data.preferences` 保存地址与 session，下次打开自动恢复登录
 - **仪表盘** —— **WAN 实时网速（↓/↑）+ 最近 60 秒趋势曲线**（每 2 秒采样，Canvas 手绘，**上下行双 Y 轴各自独立刻度**）；设备型号、OpenWrt 版本、内核版本、主机名、运行时长、CPU 负载（1/5/15 分钟）、内存占用、在线设备数；30 秒静默自动刷新
-- **测网速（二级页面）** —— 点仪表盘的「实时网速」卡片进入，界面仿「花瓣测速」：**对数刻度**的表盘 + 指针 + 中间大数字，下面一排结果（延迟 / 抖动 / 下载 / 上传）。手机侧真打流：流式下载 + POST 上传，各跑最多 10 秒（每段 8 MB / 1 MB，到点收手）；测速服务器地址可改并保存在本机，默认用 Cloudflare 的公开测速接口
+
 - **网络接口** —— 每个接口的协议、运行时长、IPv4/IPv6、网关、DNS、DHCP 服务器/租期、MTU、链路速率、MAC、桥接成员；累计流量与包数，以及**每 3 秒刷新的实时速率**（页面不可见时自动暂停采样）
 - **无线网络（多 SSID）** —— 每个射频下列出**全部** SSID（含射频关闭时配置里仍存在的），逐个可改：WiFi 名称、密码、隐藏、**绑定 network**、单独启用/禁用，以及**新增 / 删除 SSID**；射频级开关、**信道 / 频宽 / 发射功率**选择；**2.4G / 5G 两张射频卡都能折叠 / 展开**（默认开着就展开、关着就收起，手动切换后记住）；每个 SSID 的已连接设备（信号强度、收发流量、在线时长）与一键断开；周边 WiFi 扫描
 - **出口映射** —— SSID → network → 子网 → zone → 命中的 Clash `SRC-IP-CIDR` 策略组 → 该组当前节点；没有单独规则的 SSID 会明确标出「未单独分流，跟默认策略组」，并提示与哪些 SSID 共用了同一 network
@@ -144,15 +144,12 @@ entry/src/main/
     │   ├── SessionStore.ets         # 会话本地持久化
     │   ├── ThemeSettings.ets        # 外观模式（跟随系统/浅色/深色）+ setColorMode + 系统栏配色
     │   ├── GlobalContext.ets        # 全局 Context 单例
-    │   ├── DeviceNotes.ets          # 设备备注（只存本机 preferences，键是 MAC）
-    │   ├── SpeedTest.ets            # 测速引擎（流式下载 + POST 上传 + 延迟/抖动）
-    │   └── SpeedTestSettings.ets    # 测速服务器地址（本机 preferences）
+    │   └── DeviceNotes.ets          # 设备备注（只存本机 preferences，键是 MAC）
     └── pages/
         ├── Index.ets                # 入口：未登录→LoginPage，已登录→HomePage
         ├── LoginPage.ets            # 登录页
         ├── HomePage.ets             # Tabs 容器（4 个 Tab）+ 二级页面栈（Navigation / NavDestination）
         ├── DashboardPage.ets        # 仪表盘
-        ├── SpeedTestPage.ets        # 测网速（二级页面，从仪表盘「实时网速」卡片进入）
         ├── NetworkPage.ets          # 网络接口
         ├── WifiPage.ets             # 无线网络（射频开关 / SSID / 密码 / 隐藏 / 客户端踢出 / 扫描）
         ├── DevicesPage.ets          # 在线设备（二级页面，从仪表盘卡片进入）
@@ -232,12 +229,6 @@ clashInfoRows() { Column() { Row() { Text('版本'); Text(this.version) } } }
       备注写进本机 preferences（键是 MAC 小写，`model/DeviceNotes.ets`），**不写路由器** ——
       路由器那边能改的是静态租约 / hostname，会真的改变 dnsmasq 的分配行为，而备注只是给自己看的名字
 
-- [x] **测网速（二级页面）** —— 仪表盘「实时网速」卡片可点，进去是仿「花瓣测速」的表盘页：
-      对数刻度（0/1/5/10/50/100/500）+ 指针 + 中间大数字，四项结果（延迟 / 抖动 / 下载 / 上传）随测随显。
-      实现要点：下载用 `requestInStream` 流式收、上传用 POST，**各跑最多 10 秒**（每段 8 MB / 1 MB，到点 `destroy()` 收手）——
-      Cloudflare 的 `__down` 超过 10 MB 直接回 403，而单段 8 MB 在快线路上只有零点几秒，所以要多段凑够时间窗口；
-      **非 2xx 的错误页字节数绝不能当速率**（一开始就吃过这个亏：403 的 1 KB 错误页算出了 0.01 Mbps）。
-      实测（模拟器，走代理的链路）：延迟 247 ms / 抖动 36 ms / 下载 87 Mbps / 上传 21 Mbps
 
 ### 待办
 
