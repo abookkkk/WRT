@@ -188,6 +188,13 @@ OpenWrt 的 rpcd 有 ACL。**很多看起来理所当然的方法实际会被拒
 
 ## 五、OpenClash 接入规则（实测）
 
+> 🧊 **本页已冻结（2026-09-30，用户要求）**：
+> **不要再改动 `OpenClashPage.ets`，也不要新增任何 Clash 相关功能**（订阅管理、全量测速、连接列表等一律不做）。
+> 已经实现的部分保持原样、不要"顺手优化"。
+> 唯一例外是**只读复用**：其它页面（如无线页的「出口映射」）可以调用已有的
+> `getOpenClashSettings()` / `getClashRules()` / `getClashGroups()` 读数据，但不要去改这些方法本身。
+> 下面这些实测结论保留，供理解现状用。
+
 OpenClash **没有自己的 ubus 对象**，走这三条路：
 
 1. **是否运行** → `rc.list` + `name=openclash`，看 `running`。
