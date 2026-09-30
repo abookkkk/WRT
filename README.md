@@ -13,7 +13,8 @@
 - **登录与会话持久化** —— 用 `@ohos.data.preferences` 保存地址与 session，下次打开自动恢复登录
 - **仪表盘** —— **WAN 实时网速（↓/↑）+ 最近 60 秒趋势曲线**（每 2 秒采样，Canvas 手绘，**上下行双 Y 轴各自独立刻度**）；设备型号、OpenWrt 版本、内核版本、主机名、运行时长、CPU 负载（1/5/15 分钟）、内存占用、在线设备数；30 秒静默自动刷新
 - **网络接口** —— 每个接口的协议、运行时长、IPv4/IPv6、网关、DNS、DHCP 服务器/租期、MTU、链路速率、MAC、桥接成员；累计流量与包数，以及**每 3 秒刷新的实时速率**（页面不可见时自动暂停采样）
-- **无线网络** —— 每个射频的开关（2.4G/5G 独立）、WiFi 名称、密码、隐藏 SSID；**信道与频宽（HT mode）选择**；已连接设备列表（信号强度、收发流量、在线时长）与一键断开；周边 WiFi 扫描
+- **无线网络（多 SSID）** —— 每个射频下列出**全部** SSID（含射频关闭时配置里仍存在的），逐个可改：WiFi 名称、密码、隐藏、**绑定 network**、单独启用/禁用，以及**新增 / 删除 SSID**；射频级开关、**信道 / 频宽 / 发射功率**选择；每个 SSID 的已连接设备（信号强度、收发流量、在线时长）与一键断开；周边 WiFi 扫描
+- **出口映射** —— SSID → network → 子网 → zone → 命中的 Clash `SRC-IP-CIDR` 策略组 → 该组当前节点；没有单独规则的 SSID 会明确标出「未单独分流，跟默认策略组」，并提示与哪些 SSID 共用了同一 network
 - **在线设备** —— DHCP 租约列表（主机名、MAC、IP、剩余租期）
 - **OpenClash** —— 运行状态、内核版本、运行模式、HTTP 端口、是否允许局域网；**策略组与节点切换**（含各节点延迟）；一键重启
 - **深色模式** —— 顶部「跟随系统 / 深色 / 浅色」三态按钮，点一下循环切换并本地记住；选「跟随系统」时系统切深浅色，App 立即跟着变（含状态栏/导航栏图标配色）
@@ -199,17 +200,18 @@ clashInfoRows() { Column() { Row() { Text('版本'); Text(this.version) } } }
 - [x] **应用图标与应用名** —— 图标取自 OpenWrt logo（`foreground.png` 1024×1024、内容限制在中央 640 安全区；`background.png` 浅蓝→白渐变；启动图 `startIcon.png` 512×512），应用名统一为「OpenWrt 管理」
 - [x] **OpenClash 策略组与节点切换** —— 读 `/proxies` 列出 Selector / URLTest / Fallback 策略组及成员延迟，用 `PUT /proxies/{组名}` 切节点
 - [x] **深色模式** —— 顶部三态按钮（跟随系统 / 深色 / 浅色）循环切换并本地记住；颜色集中在 base/dark 两套 `color.json`，随系统深浅色自动切换（含系统栏图标配色）
+- [x] **多 SSID 管理 + 出口映射** —— 无线页改为以 `uci.get wireless` 为权威数据源，列出全部 wifi-iface（含射频禁用时配置里仍存在的那些），支持新增/删除/逐项编辑/绑定 network/单独启停；顶部新增出口映射表（SSID → network → 子网 → `SRC-IP-CIDR` 命中的策略组 → 当前节点），并对「未单独分流」「多 SSID 共用子网」做出告警
+- [x] **发射功率调整** —— `iwinfo.txpowerlist` 枚举档位（本机 0~23 dBm），写 `wireless.<radio>.txpower`；选「自动」则删除该项回到驱动默认
 
 ### 待办
 
-- [ ] **无线页的「多 SSID」缺口**（对「多 WiFi / 一 WiFi 一住宅 IP」方案影响最大的一条）：
-      `luci-rpc.getWirelessDevices` 返回的 `interfaces[]` 目前只取了第一个（`ifaces[0]`），
-      因此一个射频上挂的第 2 个及以后的 SSID 既看不到也改不了，已连接客户端也只统计第一个 AP；
-      另外还缺「SSID → network / zone / 出口 IP」的对照展示
+- [ ] **App 无法代写「按源 IP 分流」的 Clash 规则**（实测 `file.write` 被 ACL 拒绝，连 `/tmp` 都不行；OpenClash 的自定义规则文件 `file.read` 也拒绝）。
+      所以「一 WiFi 一住宅 IP」里的分流规则仍需在 LuCI / OpenClash 里配置，App 只能管 SSID 与显示映射。
+      要真正落地这个方案，还需要：给每个 SSID 建**独立 network 子网**（uci 可做，下一步能做进 App）+ 在 OpenClash 加
+      `SRC-IP-CIDR,<子网>,<策略组>` 规则（只能手工/LuCI）
 - [ ] **会话过期没有恢复路径**：路由器 session 300 秒超时后所有请求返回 `-32002`，
       页面只会显示各种「获取失败 / 写入失败」；密码没有持久化、无法自动重登，
       需要统一检测 `-32002` 并退回登录页
-- [ ] 无线页暂未做**发射功率调整**（`iwinfo.txpowerlist` 可枚举可选功率，目前只读不写）
 - [ ] 暂未做 OpenClash **订阅管理**（策略组 / 节点切换已支持）
 - [ ] 暂未做路由器重启按钮（`system.reboot` 已可用）
 - [ ] `bundleName` 还是默认的 `com.example.myapplication`，正式发布前需要改

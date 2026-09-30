@@ -414,6 +414,39 @@ List() { ... }
   `snapshot_display` 截图 → 采样背景像素判断深浅；系统深浅色可在「设置 → 显示和亮度」里切，
   跟随系统模式下 App 会立即跟着变。
 
+### 9. ⚠️ 多 SSID / 出口映射（实测结论，别再踩）
+
+**管理 SSID 的权威数据源是 `uci.get {"config":"wireless"}`，不是 `luci-rpc.getWirelessDevices`。**
+
+- 射频 `disabled=1` 时，`getWirelessDevices` 里该 radio 的 `interfaces[]` 是**空的**，
+  但配置里的 wifi-iface 仍然存在（本机实测：`radio0` 禁用，`default_radio0`（SSID `OpenWrt`）
+  还在）。只按运行时接口渲染，就会出现「射频关着 → 它的 SSID 在 App 里彻底消失」。
+- 正确做法（`WifiPage` 现在的实现）：uci 拿配置态（全部 device/iface）→ `getWirelessDevices`
+  拿运行时（每个 AP 的 `ifname`、射频 `iwinfo`）→ 用 **section 名**把两者 join 起来。
+- `uci.get` 只传 `config` 时返回 `{"values": {"<section>": {...}}}`（要多套一层 `values`）；
+  传了 `section` 才是扁平的 `{"values": {...}}`。
+
+**写操作实测放行**：`uci.add/delete/commit/set` 都可用（用不存在的 config 名探测，返回
+`ubus_code=4`（参数错）而不是 `-32002`，说明是参数问题、不是权限拒绝）。
+新增 SSID = `uci.add wireless wifi-iface`（尽量用返回的 `section`，拿不到就用前后差集兜底）
+→ 逐项 `uci.set` → `uci commit wireless` → `rc.init {"name":"network","action":"reload"}`。
+注意 `getWirelessDevices` 里 `config.network` 是**数组**，uci 里是字符串，解析要当心。
+
+**❌ 但 `file.write` 被 ACL 拒绝**：连写 `/tmp/app_probe.txt` 都返回 `ubus_code=6`；
+`file.read` 读 OpenClash 自定义规则文件同样是 6（`file.list` / `file.stat` 反而可用）。
+所以 **App 写不了 OpenClash 的分流规则**，「一 WiFi 一住宅 IP」需要的
+`SRC-IP-CIDR,<子网>,<策略组>` 只能在 LuCI / SSH 里配；App 负责管 SSID + 显示映射 + 告警。
+
+**出口映射怎么读**（纯读，不需要写权限）：
+`uci network`（`ipaddr` 是数组且形如 `192.168.2.1/24`，要归一化成网络地址）→ 子网；
+`uci firewall` 的 zone `network` 列表 → 归属区域；Clash API `/rules` 里
+`type == "SRC-IP-CIDR"` 且 payload 命中该子网 → 策略组；`/rules` 最后一条 `MATCH` → 默认策略组；
+再用 `/proxies` 取每个组当前的 `now`。
+**不要**拿目的地址的 `IP-CIDR` / 域名规则去推断「这个 SSID 从哪出去」。
+
+**发射功率**：`iwinfo.txpowerlist`（本机 0~23 dBm，`active` 标当前值）可枚举，
+写 `wireless.<radio>.txpower`；选「自动」就 `uci delete` 掉该项，回到驱动默认。
+
 ---
 
 ## 八、构建 / 部署备忘

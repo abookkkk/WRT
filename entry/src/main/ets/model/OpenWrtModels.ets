@@ -423,6 +423,91 @@ export interface ServiceStatus {
   instances?: Record<string, ServiceInstance>;
 }
 
+// ===================== 多 SSID / 出口映射 =====================
+
+/**
+ * uci wireless 里的一个 wifi-device（射频）配置态。
+ * 注意配置态和运行时状态是两回事：射频 disabled=1 时运行时一个接口都没有，
+ * 但配置里的 SSID 仍然在，所以管理多个 SSID 必须以配置为准。
+ */
+export interface WifiDeviceCfg {
+  section: string;
+  band: string;
+  channel: string;
+  htmode: string;
+  /** uci 里的发射功率（dBm）；空字符串表示没配，跟驱动/国家默认 */
+  txpower: string;
+  country: string;
+  disabled: boolean;
+}
+
+/**
+ * uci wireless 里的一个 wifi-iface，也就是**一个 SSID**（一个 AP）。
+ *
+ * 为什么不用 luci-rpc.getWirelessDevices 的 interfaces[]：射频禁用时那个数组是空的，
+ * 配置里的 SSID 会完全看不见（实测本机 2.4G：radio0 disabled=1，配置里
+ * default_radio0（SSID OpenWrt）还在，但运行时接口 0 个）。
+ */
+export interface WifiIfaceCfg {
+  section: string;
+  /** 所属射频：radio0 / radio1 */
+  radio: string;
+  /** 绑定的 network 名：lan / guest …（决定这个 SSID 走哪个子网与防火墙区域） */
+  network: string;
+  mode: string;
+  ssid: string;
+  key: string;
+  encryption: string;
+  hidden: boolean;
+  disabled: boolean;
+}
+
+/** 射频 + SSID 的配置态集合 */
+export interface WifiConfig {
+  devices: WifiDeviceCfg[];
+  ifaces: WifiIfaceCfg[];
+}
+
+/** uci network 里的一个 interface 段（映射表要显示 SSID 绑到了哪个子网） */
+export interface NetworkCfg {
+  name: string;
+  proto: string;
+  device: string;
+  /** 归一化成网络地址形式，如 192.168.2.0/24；解析不出来则为空 */
+  subnet: string;
+}
+
+/** Clash 外部控制 API /rules 里的一条规则（只取我们关心的字段） */
+export interface ClashRule {
+  type: string;
+  payload: string;
+  proxy: string;
+}
+
+/**
+ * 出口映射表的一行：这个 SSID 到底从哪儿出去。
+ *
+ * exitGroup 为空表示它所在子网**没有**单独的 SRC-IP-CIDR 规则，会跟着 MATCH
+ * 默认策略组走 —— 也就是多个 SSID 共用同一个出口。
+ */
+export interface ExitMapping {
+  ssid: string;
+  section: string;
+  radio: string;
+  network: string;
+  zone: string;
+  subnet: string;
+  /** 命中的策略组名（按源 IP 分流），空=未单独分流 */
+  exitGroup: string;
+  /** 上面那个策略组当前选中的节点 */
+  exitNode: string;
+  /** 默认（MATCH）策略组与它当前选中的节点 */
+  defaultGroup: string;
+  defaultNode: string;
+  /** 同一个 network 上还挂着别的 SSID（那就没法按 SSID 分流） */
+  sharedWith: string;
+}
+
 // ===================== HTTP 请求通用结果 =====================
 
 /** HTTP 请求结果 */

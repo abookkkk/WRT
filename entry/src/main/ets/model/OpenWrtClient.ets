@@ -30,8 +30,13 @@ import type {
   OpenClashSettings,
   ClashGroup,
   ClashOverview,
+  ClashRule,
   WirelessRadio,
   WifiClient,
+  WifiConfig,
+  WifiDeviceCfg,
+  WifiIfaceCfg,
+  NetworkCfg,
   IwinfoListResponse,
   IwinfoScanResult,
   IwinfoFreq,
@@ -432,6 +437,77 @@ export class OpenWrtClient {
   }
 
   /**
+   * Clash 外部控制 API：规则列表。
+   * 出口映射表靠它找 SRC-IP-CIDR（按源子网分流）和 MATCH（默认策略组）。
+   */
+  async getClashRules(baseUrl: string, secret: string): Promise<ClashRule[]> {
+    const out: ClashRule[] = [];
+    const r: HttpResult = await this.clashRequest(baseUrl + '/rules', secret, http.RequestMethod.GET, '');
+    if (!r.success || !r.data) {
+      return out;
+    }
+    try {
+      const root: Record<string, Object> = JSON.parse(r.data) as Record<string, Object>;
+      const list: Object[] | undefined = root['rules'] as Object[];
+      if (list) {
+        for (let i = 0; i < list.length; i++) {
+          const item: Record<string, Object> = list[i] as Record<string, Object>;
+          const rule: ClashRule = {
+            type: String(item['type'] || ''),
+            payload: String(item['payload'] || ''),
+            proxy: String(item['proxy'] || '')
+          };
+          out.push(rule);
+        }
+      }
+    } catch (e) {
+      console.warn('[Clash] 解析 /rules 失败: ' + JSON.stringify(e));
+    }
+    return out;
+  }
+
+  /**
+   * Clash 外部控制 API：只取策略组（出口映射表要显示每个组当前选中的节点）。
+   * 比 getClashOverview 省 3 个请求（那个还会拉 version/configs/connections）。
+   */
+  async getClashGroups(baseUrl: string, secret: string): Promise<ClashGroup[]> {
+    const groups: ClashGroup[] = [];
+    const r: HttpResult = await this.clashRequest(baseUrl + '/proxies', secret, http.RequestMethod.GET, '');
+    if (!r.success || !r.data) {
+      return groups;
+    }
+    try {
+      const root: Record<string, Object> = JSON.parse(r.data) as Record<string, Object>;
+      const proxies: Record<string, Object> | undefined = root['proxies'] as Record<string, Object>;
+      if (proxies) {
+        const names: string[] = Object.keys(proxies);
+        for (let i = 0; i < names.length; i++) {
+          const name: string = names[i];
+          const p: Record<string, Object> = proxies[name] as Record<string, Object>;
+          const type: string = String(p['type'] || '');
+          if (type === 'Selector' || type === 'URLTest' || type === 'Fallback' || type === 'LoadBalance') {
+            if (name === 'GLOBAL') {
+              continue;
+            }
+            const g: ClashGroup = {
+              name: name,
+              type: type,
+              now: String(p['now'] || ''),
+              members: [],
+              memberDelays: [],
+              switchable: type === 'Selector'
+            };
+            groups.push(g);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[Clash] 解析 /proxies（仅策略组）失败: ' + JSON.stringify(e));
+    }
+    return groups;
+  }
+
+  /**
    * 切换 OpenClash 运行模式（rule / global / direct）。
    * 走 uci set + commit，然后需要重启服务才生效。
    */
@@ -464,6 +540,289 @@ export class OpenWrtClient {
       'uci', 'commit', json('{"config":"openclash"}')
     );
     return commitResult.success;
+  }
+
+  // ======================== 多 SSID / 出口映射 ========================
+
+  /** 读 wireless 的 uci 配置原文（含被禁用射频下的 SSID，这是多 SSID 管理的权威数据源） */
+  async getWirelessUci(): Promise<UbusResult<Record<string, Object>>> {
+    return this.ubusCallAuth<Record<string, Object>>('uci', 'get', json('{"config":"wireless"}'));
+  }
+
+  /** 解析 uci wireless → 射频配置 + 全部 SSID 配置 */
+  async getWifiConfig(): Promise<WifiConfig> {
+    const devices: WifiDeviceCfg[] = [];
+    const ifaces: WifiIfaceCfg[] = [];
+    const r: UbusResult<Record<string, Object>> = await this.getWirelessUci();
+    if (!r.success || !r.data) {
+      console.error('[OpenWrtClient] getWifiConfig 读 wireless 失败: ' + (r.error || ''));
+      return { devices: devices, ifaces: ifaces };
+    }
+    const values: Record<string, Object> | undefined = r.data['values'] as Record<string, Object>;
+    if (!values) {
+      return { devices: devices, ifaces: ifaces };
+    }
+    const names: string[] = Object.keys(values);
+    for (let i = 0; i < names.length; i++) {
+      const sec: Record<string, Object> = values[names[i]] as Record<string, Object>;
+      const type: string = String(sec['.type'] || '');
+      if (type === 'wifi-device') {
+        const dev: WifiDeviceCfg = {
+          section: names[i],
+          band: String(sec['band'] || ''),
+          channel: String(sec['channel'] || ''),
+          htmode: String(sec['htmode'] || ''),
+          txpower: String(sec['txpower'] || ''),
+          country: String(sec['country'] || ''),
+          disabled: String(sec['disabled'] || '0') === '1'
+        };
+        devices.push(dev);
+      } else if (type === 'wifi-iface') {
+        const ap: WifiIfaceCfg = {
+          section: names[i],
+          radio: String(sec['device'] || ''),
+          network: String(sec['network'] || ''),
+          mode: String(sec['mode'] || ''),
+          ssid: String(sec['ssid'] || ''),
+          key: String(sec['key'] || ''),
+          encryption: String(sec['encryption'] || ''),
+          hidden: String(sec['hidden'] || '0') === '1',
+          disabled: String(sec['disabled'] || '0') === '1'
+        };
+        if (ap.mode === '' || ap.mode === 'ap') {
+          ifaces.push(ap);
+        }
+      }
+    }
+    return { devices: devices, ifaces: ifaces };
+  }
+
+  /** 读 network 的 uci 配置并解析出 interface 段（含归一化子网） */
+  async getNetworkConfigs(): Promise<NetworkCfg[]> {
+    const out: NetworkCfg[] = [];
+    const r: UbusResult<Record<string, Object>> = await this.ubusCallAuth<Record<string, Object>>(
+      'uci', 'get', json('{"config":"network"}')
+    );
+    if (!r.success || !r.data) {
+      return out;
+    }
+    const values: Record<string, Object> | undefined = r.data['values'] as Record<string, Object>;
+    if (!values) {
+      return out;
+    }
+    const names: string[] = Object.keys(values);
+    for (let i = 0; i < names.length; i++) {
+      const sec: Record<string, Object> = values[names[i]] as Record<string, Object>;
+      if (String(sec['.type'] || '') !== 'interface') {
+        continue;
+      }
+      let ip: string = '';
+      const addr: Object | undefined = sec['ipaddr'];
+      if (addr !== undefined && addr !== null && Array.isArray(addr)) {
+        const arr: Object[] = addr as Object[];
+        if (arr.length > 0) {
+          ip = String(arr[0]);
+        }
+      } else if (addr !== undefined && addr !== null) {
+        ip = String(addr);
+      }
+      const cfg: NetworkCfg = {
+        name: names[i],
+        proto: String(sec['proto'] || ''),
+        device: String(sec['device'] || ''),
+        subnet: this.toSubnet(ip)
+      };
+      out.push(cfg);
+    }
+    return out;
+  }
+
+  /**
+   * 读 firewall 的 uci 配置，返回 network 名 → zone 名。
+   * zone 的 network 是列表（一个 zone 可含多个 network）。
+   */
+  async getNetworkZones(): Promise<Record<string, string>> {
+    const out: Record<string, string> = {};
+    const r: UbusResult<Record<string, Object>> = await this.ubusCallAuth<Record<string, Object>>(
+      'uci', 'get', json('{"config":"firewall"}')
+    );
+    if (!r.success || !r.data) {
+      return out;
+    }
+    const values: Record<string, Object> | undefined = r.data['values'] as Record<string, Object>;
+    if (!values) {
+      return out;
+    }
+    const names: string[] = Object.keys(values);
+    for (let i = 0; i < names.length; i++) {
+      const sec: Record<string, Object> = values[names[i]] as Record<string, Object>;
+      if (String(sec['.type'] || '') !== 'zone') {
+        continue;
+      }
+      const zoneName: string = String(sec['name'] || '');
+      const nets: string[] = this.toStringList(sec['network']);
+      for (let k = 0; k < nets.length; k++) {
+        out[nets[k]] = zoneName;
+      }
+    }
+    return out;
+  }
+
+  /**
+   * 把 uci 的 "192.168.2.1/24" 归一化成网络地址 "192.168.2.0/24"
+   * （映射表要拿它跟 Clash 的 SRC-IP-CIDR 规则比对）。
+   */
+  private toSubnet(ipCidr: string): string {
+    if (ipCidr.length === 0) {
+      return '';
+    }
+    const parts: string[] = ipCidr.split('/');
+    if (parts.length !== 2) {
+      return ipCidr;
+    }
+    const prefix: number = parseInt(parts[1]);
+    if (isNaN(prefix) || prefix < 0 || prefix > 32) {
+      return ipCidr;
+    }
+    const octets: string[] = parts[0].split('.');
+    if (octets.length !== 4) {
+      return ipCidr;
+    }
+    const nums: number[] = [];
+    for (let i = 0; i < 4; i++) {
+      const n: number = parseInt(octets[i]);
+      if (isNaN(n) || n < 0 || n > 255) {
+        return ipCidr;
+      }
+      nums.push(n);
+    }
+    let value: number = 0;
+    for (let i = 0; i < 4; i++) {
+      value = value * 256 + nums[i];
+    }
+    const mask: number = prefix === 0 ? 0 : (0xFFFFFFFF << (32 - prefix)) >>> 0;
+    const net: number = (value & mask) >>> 0;
+    const out: number[] = [
+      (net >>> 24) & 0xFF, (net >>> 16) & 0xFF, (net >>> 8) & 0xFF, net & 0xFF
+    ];
+    return `${out[0]}.${out[1]}.${out[2]}.${out[3]}/${prefix}`;
+  }
+
+  /**
+   * 新增一个 SSID（wifi-iface），返回新段名（失败返回空串）。
+   *
+   * 流程：uci.add 拿段名（拿不到就用前后差集兜底）→ 逐项 uci.set → 不 commit
+   * （commit + 生效由调用方统一走 applyWifi()）。
+   */
+  async addWifiIface(radio: string, ssid: string, key: string, network: string, hidden: boolean): Promise<string> {
+    const before: string[] = await this.wifiIfaceSections();
+    const addRes: UbusResult<Record<string, Object>> = await this.ubusCallAuth<Record<string, Object>>(
+      'uci', 'add', json('{"config":"wireless","type":"wifi-iface"}')
+    );
+    if (!addRes.success) {
+      console.error('[OpenWrtClient] uci.add wifi-iface 失败: code=' + addRes.code);
+      return '';
+    }
+    let section: string = '';
+    if (addRes.data) {
+      section = String(addRes.data['section'] || '');
+    }
+    if (section.length === 0) {
+      const after: string[] = await this.wifiIfaceSections();
+      for (let i = 0; i < after.length; i++) {
+        if (before.indexOf(after[i]) < 0) {
+          section = after[i];
+        }
+      }
+    }
+    if (section.length === 0) {
+      console.error('[OpenWrtClient] 新增 wifi-iface 后找不到段名');
+      return '';
+    }
+
+    const options: string[][] = [
+      ['device', radio],
+      ['mode', 'ap'],
+      ['ssid', ssid],
+      ['network', network],
+      ['hidden', hidden ? '1' : '0'],
+      ['encryption', key.length > 0 ? 'psk2' : 'none']
+    ];
+    for (let i = 0; i < options.length; i++) {
+      const ok: boolean = await this.setWifiOption(section, options[i][0], options[i][1]);
+      if (!ok) {
+        console.error('[OpenWrtClient] 写 ' + options[i][0] + ' 失败，回滚删除新段');
+        await this.deleteWifiIface(section);
+        return '';
+      }
+    }
+    if (key.length > 0) {
+      const ok: boolean = await this.setWifiOption(section, 'key', key);
+      if (!ok) {
+        await this.deleteWifiIface(section);
+        return '';
+      }
+    }
+    console.info('[OpenWrtClient] 已新增 SSID 段 ' + section);
+    return section;
+  }
+
+  /** 删除一个 wireless 配置项（例如把发射功率恢复成驱动默认） */
+  async deleteWifiOption(section: string, option: string): Promise<boolean> {
+    const r: UbusResult<Object> = await this.ubusCallAuth<Object>(
+      'uci', 'delete', json(`{"config":"wireless","section":"${section}","option":"${option}"}`)
+    );
+    return r.success;
+  }
+
+  /** 删除一个 wifi-iface（整个 SSID）；不 commit，生效由调用方统一处理 */
+  async deleteWifiIface(section: string): Promise<boolean> {
+    const r: UbusResult<Object> = await this.ubusCallAuth<Object>(
+      'uci', 'delete', json(`{"config":"wireless","section":"${section}"}`)
+    );
+    return r.success;
+  }
+
+  /** 当前配置里所有 wifi-iface 段名 */
+  private async wifiIfaceSections(): Promise<string[]> {
+    const out: string[] = [];
+    const r: UbusResult<Record<string, Object>> = await this.getWirelessUci();
+    if (!r.success || !r.data) {
+      return out;
+    }
+    const values: Record<string, Object> | undefined = r.data['values'] as Record<string, Object>;
+    if (!values) {
+      return out;
+    }
+    const names: string[] = Object.keys(values);
+    for (let i = 0; i < names.length; i++) {
+      const sec: Record<string, Object> = values[names[i]] as Record<string, Object>;
+      if (String(sec['.type'] || '') === 'wifi-iface') {
+        out.push(names[i]);
+      }
+    }
+    return out;
+  }
+
+  /** 该射频支持的发射功率档位（dBm） */
+  async getTxPowerList(ifname: string): Promise<number[]> {
+    const out: number[] = [];
+    const r: UbusResult<IwinfoListResponse<Record<string, Object>>> =
+      await this.ubusCallAuth<IwinfoListResponse<Record<string, Object>>>(
+        'iwinfo', 'txpowerlist', json(`{"device":"${ifname}"}`)
+      );
+    if (!r.success || !r.data) {
+      return out;
+    }
+    const list: Record<string, Object>[] | undefined = r.data.results;
+    if (!list) {
+      return out;
+    }
+    for (let i = 0; i < list.length; i++) {
+      const dbm: number = this.toNumber(list[i]['dbm']);
+      out.push(dbm);
+    }
+    return out;
   }
 
   // ======================== 无线（WiFi） ========================
