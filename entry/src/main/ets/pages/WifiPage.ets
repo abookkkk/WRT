@@ -31,10 +31,7 @@ import type {
   WifiConfig,
   WifiDeviceCfg,
   WifiIfaceCfg,
-  NetworkCfg,
-  ClashRule,
-  ClashGroup,
-  OpenClashSettings
+  NetworkCfg
 } from '../model/OpenWrtModels';
 import {
   C_PRIMARY, C_SUCCESS, C_WARNING, C_DANGER, C_TEXT_1, C_TEXT_2, C_TEXT_3, C_CARD, C_FILL,
@@ -94,20 +91,6 @@ class RadioItem {
   expanded: boolean = false;
 }
 
-/** 出口映射表的一行 */
-class MapRow {
-  ssid: string = '';
-  where: string = '';
-  network: string = '';
-  zone: string = '';
-  subnet: string = '';
-  exitGroup: string = '';
-  exitNode: string = '';
-  defaultGroup: string = '';
-  defaultNode: string = '';
-  warn: string = '';
-}
-
 /** 扫描结果条目 */
 class ScanItem {
   ssid: string = '';
@@ -121,8 +104,6 @@ export struct WifiPage {
   private client!: OpenWrtClient;
 
   @State private radios: RadioItem[] = [];
-  @State private mapping: MapRow[] = [];
-  @State private mappingNote: string = '';
   @State private networkNames: string[] = [];
   /** lan zone 的段名与它当前的 network 列表（建/删子网时要基于原列表做数组 set） */
   @State private lanZoneSection: string = '';
@@ -160,9 +141,6 @@ export struct WifiPage {
               Text('无线网络')
                 .fontSize(17).fontWeight(FontWeight.Bold)
                 .width('100%').margin({ bottom: 12 });
-
-              // ===== 出口映射 =====
-              this.mappingCard();
 
               // ===== 每个射频一张卡（卡内含该射频下所有 SSID） =====
               ForEach(this.radios, (radio: RadioItem) => {
@@ -247,81 +225,6 @@ export struct WifiPage {
       }
     }
     .width('100%').height('100%')
-  }
-
-  // ==================== 出口映射卡片 ====================
-
-  @Builder
-  mappingCard() {
-    Column() {
-      Row() {
-        Text('出口映射').fontSize(16).fontWeight(FontWeight.Bold).fontColor(C_TEXT_1).layoutWeight(1);
-        Text('SSID → 网络 → 策略组').fontSize(12).fontColor(C_TEXT_3);
-      }
-      .width('100%').margin({ bottom: 10 });
-
-      if (this.mappingNote.length > 0) {
-        Text(this.mappingNote)
-          .fontSize(12).fontColor(C_WARNING).width('100%').lineHeight(17).margin({ bottom: 8 });
-      }
-
-      if (this.mapping.length === 0) {
-        Text('没有可用的 SSID')
-          .fontSize(13).fontColor(C_TEXT_3).width('100%');
-      }
-
-      ForEach(this.mapping, (row: MapRow) => {
-        Column() {
-          Row() {
-            Column() {
-              Text(row.ssid.length > 0 ? row.ssid : '(未命名 SSID)')
-                .fontSize(14).fontWeight(FontWeight.Medium).fontColor(C_TEXT_1)
-                .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-              Text(row.where + ' · ' + (row.network.length > 0 ? row.network : '未绑定') +
-                   (row.zone.length > 0 ? ' · zone ' + row.zone : '') +
-                   (row.subnet.length > 0 ? ' · ' + row.subnet : ''))
-                .fontSize(11).fontColor(C_TEXT_3).margin({ top: 3 })
-                .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-            }
-            .alignItems(HorizontalAlign.Start).layoutWeight(1);
-
-            Column() {
-              if (row.exitGroup.length > 0) {
-                Text(row.exitGroup)
-                  .fontSize(13).fontWeight(FontWeight.Medium).fontColor(C_SUCCESS)
-                  .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
-                Text(row.exitNode.length > 0 ? row.exitNode : '(未选节点)')
-                  .fontSize(11).fontColor(C_TEXT_2).margin({ top: 3 }).maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis });
-              } else {
-                Text('未单独分流')
-                  .fontSize(13).fontWeight(FontWeight.Medium).fontColor(C_WARNING);
-                Text('跟默认：' + (row.defaultGroup.length > 0 ? row.defaultGroup : '—') +
-                     (row.defaultNode.length > 0 ? ' → ' + row.defaultNode : ''))
-                  .fontSize(11).fontColor(C_TEXT_2).margin({ top: 3 }).maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis });
-              }
-            }
-            .alignItems(HorizontalAlign.End).layoutWeight(1);
-          }
-          .width('100%').alignItems(VerticalAlign.Top);
-
-          if (row.warn.length > 0) {
-            Text(row.warn)
-              .fontSize(11).fontColor(C_WARNING).width('100%').margin({ top: 4 }).lineHeight(16);
-          }
-        }
-        .width('100%')
-        .padding({ top: 9, bottom: 9 })
-      }, (row: MapRow) => row.ssid + '|' + row.network + '#' + this.dataVersion)
-
-      Text('同一子网下的多个 SSID 没法按 SSID 分流：要让某路 WiFi 走独立住宅 IP，' +
-           '需要给它单独的 network 子网，并在 OpenClash 里加一条 SRC-IP-CIDR 规则指向对应策略组。')
-        .fontSize(11).fontColor(C_TEXT_3).width('100%').lineHeight(16).margin({ top: 10 });
-    }
-    .width('100%').padding(16)
-    .backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM)
-    .margin({ bottom: 12 });
   }
 
   // ==================== 射频卡片 ====================
@@ -679,9 +582,9 @@ export struct WifiPage {
       const runtime: Record<string, WirelessRadio> =
         (rtResp.success && rtResp.data) ? rtResp.data : {};
 
-      // 3) 出口映射素材：network 子网 / zone / Clash 规则与策略组
+      // 3) 网络素材：绑定 network 的候选、每个 network 的子网、lan zone 当前成员
+      //    （原来这里还会读 Clash 规则来画「出口映射」卡片 —— 那张卡按要求删掉了，规则 / 策略组一并不再请求）
       const netCfgs: NetworkCfg[] = await this.client.getNetworkConfigs();
-      const zones: Record<string, string> = await this.client.getNetworkZones();
       const netSubnet: Record<string, string> = {};
       const netNames: string[] = [];
       for (let i = 0; i < netCfgs.length; i++) {
@@ -695,25 +598,6 @@ export struct WifiPage {
       // lan zone（建独立子网时要往它的 network 列表里追加；只能数组 set，不能 add_list）
       this.lanZoneSection = await this.client.findLanZoneSection();
       this.lanZoneNetworks = await this.client.getLanZoneNetworks(this.lanZoneSection);
-
-      let rules: ClashRule[] = [];
-      let groups: ClashGroup[] = [];
-      let clashNote: string = '';
-      const oc: OpenClashSettings | null = await this.client.getOpenClashSettings();
-      if (oc === null) {
-        clashNote = '读不到 OpenClash 配置：下面显示的是 SSID 与网络归属，出口一列不可信';
-      } else if (!oc.enabled) {
-        clashNote = 'OpenClash 总开关是关闭的，所有 SSID 都按默认路由直出';
-      } else {
-        const base: string = `http://${this.client.getHost()}:${oc.apiPort}`;
-        rules = await this.client.getClashRules(base, oc.apiSecret);
-        groups = await this.client.getClashGroups(base, oc.apiSecret);
-        if (rules.length === 0) {
-          clashNote = '读不到 Clash 规则（OpenClash 可能没在运行），出口一列仅供参考';
-        } else if (this.countSourceRules(rules) === 0) {
-          clashNote = '当前没有任何 SRC-IP-CIDR 规则：所有 SSID 都会共用默认策略组的出口';
-        }
-      }
 
       // 4) 组装射频 + SSID
       const items: RadioItem[] = [];
@@ -806,36 +690,7 @@ export struct WifiPage {
         items.push(item);
       }
 
-      // 5) 组装出口映射
-      let defGroup: string = '';
-      for (let i = 0; i < rules.length; i++) {
-        if (rules[i].type === 'MATCH') {
-          defGroup = rules[i].proxy;
-        }
-      }
-      const rows: MapRow[] = [];
-      for (let r = 0; r < items.length; r++) {
-        const radio: RadioItem = items[r];
-        for (let a = 0; a < radio.aps.length; a++) {
-          const ap: ApItem = radio.aps[a];
-          const row: MapRow = new MapRow();
-          row.ssid = ap.ssid;
-          row.where = radio.bandLabel + ' · ' + ap.radio;
-          row.network = ap.network;
-          row.zone = zones[ap.network] || '';
-          row.subnet = netSubnet[ap.network] || '';
-          row.exitGroup = this.matchSourceGroup(rules, row.subnet);
-          row.exitNode = this.groupNow(groups, row.exitGroup);
-          row.defaultGroup = defGroup;
-          row.defaultNode = this.groupNow(groups, defGroup);
-          row.warn = this.mappingWarn(items, ap, row);
-          rows.push(row);
-        }
-      }
-
       this.radios = items;
-      this.mapping = rows;
-      this.mappingNote = clashNote;
       this.dataVersion = this.dataVersion + 1;
       // 成功就清掉错误页：停在错误页时，一次下拉刷新也能把它救回来
       this.hasError = false;
@@ -866,74 +721,6 @@ export struct WifiPage {
     if (this.isRefreshing) return;
     this.isRefreshing = true;
     this.loadData('pull');
-  }
-
-  /** SRC-IP-CIDR 规则条数 */
-  private countSourceRules(rules: ClashRule[]): number {
-    let n: number = 0;
-    for (let i = 0; i < rules.length; i++) {
-      if (rules[i].type === 'SRC-IP-CIDR') {
-        n = n + 1;
-      }
-    }
-    return n;
-  }
-
-  /**
-   * 找出按源子网分流的策略组。
-   * 只看 SRC-IP-CIDR —— 目的地址的 IP-CIDR / 域名规则跟"这个 SSID 从哪出去"无关。
-   */
-  private matchSourceGroup(rules: ClashRule[], subnet: string): string {
-    if (subnet.length === 0) {
-      return '';
-    }
-    const subnetIp: string = subnet.split('/')[0];
-    for (let i = 0; i < rules.length; i++) {
-      const rule: ClashRule = rules[i];
-      if (rule.type !== 'SRC-IP-CIDR') {
-        continue;
-      }
-      if (rule.payload === subnet || rule.payload.split('/')[0] === subnetIp) {
-        return rule.proxy;
-      }
-    }
-    return '';
-  }
-
-  /** 策略组当前选中的节点 */
-  private groupNow(groups: ClashGroup[], group: string): string {
-    if (group.length === 0) {
-      return '';
-    }
-    for (let i = 0; i < groups.length; i++) {
-      if (groups[i].name === group) {
-        return groups[i].now;
-      }
-    }
-    return '';
-  }
-
-  /** 生成这一行的告警文案 */
-  private mappingWarn(items: RadioItem[], ap: ApItem, row: MapRow): string {
-    const parts: string[] = [];
-    if (row.subnet.length === 0) {
-      parts.push('绑定的 network「' + ap.network + '」读不到子网，无法判断分流');
-    } else if (row.exitGroup.length === 0) {
-      parts.push('该子网没有 SRC-IP-CIDR 规则，会跟默认出口');
-    }
-    const share: string[] = [];
-    for (let r = 0; r < items.length; r++) {
-      for (let a = 0; a < items[r].aps.length; a++) {
-        const other: ApItem = items[r].aps[a];
-        if (other.section !== ap.section && other.network === ap.network) {
-          share.push(other.ssid.length > 0 ? other.ssid : other.section);
-        }
-      }
-    }
-    if (share.length > 0) {
-      parts.push('与「' + share.join('、') + '」共用同一 network，没法按 SSID 分开出口');
-    }
-    return parts.join('；');
   }
 
   private toClientItems(raw: WifiClient[]): ClientItem[] {
