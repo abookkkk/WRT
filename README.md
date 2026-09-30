@@ -231,13 +231,17 @@ clashInfoRows() { Column() { Row() { Text('版本'); Text(this.version) } } }
       路由器那边能改的是静态租约 / hostname，会真的改变 dnsmasq 的分配行为，而备注只是给自己看的名字
 
 
+- [x] **换了 bundleName** —— `com.example.myapplication` → **`com.abookkkk.wrt`**（正式发布前必须把默认包名换掉）
+      ⚠️ 换包名等于换了一个 App：**旧包的本地数据不会跟过来**（登录 session、设备备注、外观设置都在各自的沙箱里），
+      装新版后要重新登录、备注重写；旧包可以直接卸载
+
 ### 待办
 
 - [ ] **App 无法代写「按源 IP 分流」的 Clash 规则**（实测 `file.write` 被 ACL 拒绝，连 `/tmp` 都不行；OpenClash 的自定义规则文件 `file.read` 也拒绝）。
       独立子网已经做进 App（无线页每个 SSID 都能建/删独立网段），但最后一步
       `SRC-IP-CIDR,<子网>,<策略组>` 规则仍要在 LuCI / SSH 里配 —— 详见 `PLAN.md`
 - [ ] 暂未做路由器重启按钮（`system.reboot` 已可用）
-- [ ] `bundleName` 还是默认的 `com.example.myapplication`，正式发布前需要改
+
 - [x] **修掉「用字符串拼 JSON」的隐患** —— `session.login` 的用户名/密码、`setWifiOption` 的值、uci.set 家族，
       以及 ubus 请求体本身的 `sessionId / obj / func / args`，现在一律走 `JSON.stringify` 转义，
       密码 / SSID 里含 `"` 或 `\` 不会再破坏请求体。实测把 2.4G 的 SSID 写成含反斜杠的值能正常落盘（读回一致，随后已还原）

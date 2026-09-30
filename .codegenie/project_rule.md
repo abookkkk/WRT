@@ -39,7 +39,7 @@
 | SDK | HarmonyOS 6.1.1 (API 24)，targetSdkVersion / compatibleSdkVersion 都是 6.1.1(24) |
 | 工程路径 | E:\HarmonyNext\Code\OpenWrt |
 | 工程状态 | 已有完整工程，4 个 Tab 页：仪表盘 / 网络接口 / 无线 / OpenClash，外加 1 个二级页面「在线设备」（从仪表盘卡片进入，见第七节第 11 条）；应用名「OpenWrt 管理」（分层图标，源自 OpenWrt logo） |
-| bundleName | com.example.myapplication |
+| bundleName | **com.abookkkk.wrt**（2026-09-30 从默认的 `com.example.myapplication` 改过来；换包名等于换一个 App，旧包的本地数据不会跟过来） |
 
 ---
 
@@ -575,7 +575,7 @@ private onPullRefresh(): void {
   ```powershell
   $hdc = "E:\HarmonyNext\DevEco Studio\sdk\default\openharmony\toolchains\hdc.exe"
   & $hdc install -r <hap路径>
-  & $hdc shell aa start -a EntryAbility -b com.example.myapplication
+  & $hdc shell aa start -a EntryAbility -b com.abookkkk.wrt
   ```
 - 抓日志：`hdc shell hilog -r`（清空）→ 操作 → `hdc shell "hilog -x"`，过滤 `JSAPP`
 - 截图：`hdc shell snapshot_display -f /data/local/tmp/s.jpg` + `hdc file recv`
