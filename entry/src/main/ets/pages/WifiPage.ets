@@ -65,6 +65,10 @@ class ApItem {
   ifname: string = '';
   /** 运行时该 BSS 是否存在（射频开着 + 这个 AP 启用） */
   live: boolean = false;
+  /** 绑定的 network 对应的子网（如 192.168.2.0/24），读不到为空 */
+  netSubnet: string = '';
+  /** 是否已用了独立子网（network != lan） */
+  dedicated: boolean = false;
   clients: ClientItem[] = [];
 }
 
@@ -116,6 +120,9 @@ export struct WifiPage {
   @State private mapping: MapRow[] = [];
   @State private mappingNote: string = '';
   @State private networkNames: string[] = [];
+  /** lan zone 的段名与它当前的 network 列表（建/删子网时要基于原列表做数组 set） */
+  @State private lanZoneSection: string = '';
+  @State private lanZoneNetworks: string[] = [];
   @State private scanResult: ScanItem[] = [];
   @State private scanHint: string = '';
   @State private scanFor: string = '';
@@ -498,6 +505,40 @@ export struct WifiPage {
       }
       .width('100%').margin({ top: 2, bottom: 10 });
 
+      // --- 出口子网（建/删独立网段，给"一 WiFi 一住宅 IP"打底）---
+      Column() {
+        Row() {
+          Column() {
+            Text(ap.dedicated ? '独立子网' : '与 lan 共用子网')
+              .fontSize(13).fontColor(C_TEXT_2);
+            Text((ap.network.length > 0 ? ap.network : '未绑定') +
+                 (ap.netSubnet.length > 0 ? ' · ' + ap.netSubnet : ''))
+              .fontSize(11).fontColor(C_TEXT_3).margin({ top: 2 });
+          }
+          .alignItems(HorizontalAlign.Start).layoutWeight(1);
+
+          Button(ap.dedicated ? '退回 lan' : '建独立子网')
+            .fontSize(12).height(30).type(ButtonType.Capsule)
+            .backgroundColor(ap.dedicated ? C_DANGER : C_PRIMARY)
+            .enabled(!this.busy && this.lanZoneSection.length > 0)
+            .onClick(() => {
+              if (ap.dedicated) {
+                this.confirmDeleteSubnet(ap);
+              } else {
+                this.confirmCreateSubnet(ap);
+              }
+            });
+        }
+        .width('100%');
+
+        Text(ap.dedicated
+          ? '该 SSID 已是独立网段：在 OpenClash / LuCI 里为 ' + ap.netSubnet +
+            ' 加一条 SRC-IP-CIDR 规则指向专用策略组，它就从那条住宅 IP 出去'
+          : '建独立子网会新建桥 + 静态接口 + DHCP，把该 SSID 换到 192.168.x.0/24 新网段（客户端需重连）')
+          .fontSize(11).fontColor(C_TEXT_3).width('100%').margin({ top: 4 }).lineHeight(16);
+      }
+      .width('100%').margin({ top: 2, bottom: 10 })
+
       // --- 隐藏 SSID ---
       Row() {
         Column() {
@@ -618,6 +659,10 @@ export struct WifiPage {
       }
       this.networkNames = netNames;
 
+      // lan zone（建独立子网时要往它的 network 列表里追加；只能数组 set，不能 add_list）
+      this.lanZoneSection = await this.client.findLanZoneSection();
+      this.lanZoneNetworks = await this.client.getLanZoneNetworks(this.lanZoneSection);
+
       let rules: ClashRule[] = [];
       let groups: ClashGroup[] = [];
       let clashNote: string = '';
@@ -673,6 +718,8 @@ export struct WifiPage {
           ap.password = ic.key;
           ap.encryption = ic.encryption;
           ap.network = ic.network;
+          ap.netSubnet = netSubnet[ic.network] || '';
+          ap.dedicated = ic.network.length > 0 && ic.network !== 'lan';
           ap.hidden = ic.hidden;
           ap.disabled = ic.disabled;
 
@@ -1032,6 +1079,101 @@ export struct WifiPage {
     } finally {
       this.busy = false;
     }
+  }
+
+  /** 建独立子网前的确认（新建桥/接口/DHCP + 追加进 lan zone + 重绑该 SSID） */
+  private async confirmCreateSubnet(ap: ApItem): Promise<void> {
+    const prefix: string = await this.client.findFreeSubnetPrefix();
+    if (prefix.length === 0) {
+      this.toast('找不到空闲网段（192.168.3~249 都被占用了）');
+      return;
+    }
+    const netName: string = 'air' + prefix.split('.')[2];
+    promptAction.showDialog({
+      title: '建立独立子网',
+      message: '让「' + (ap.ssid.length > 0 ? ap.ssid : ap.section) + '」使用独立网段：\n' +
+               '  新网段 ' + prefix + '.0/24（网关 ' + prefix + '.1）\n' +
+               '  新建桥 br-' + netName + '、静态接口 ' + netName + ' 与对应 DHCP\n' +
+               '  把 ' + netName + ' 加进 lan 防火墙区域（保持被 OpenClash 接管）\n' +
+               '  该 SSID 从当前 network 改绑到 ' + netName + '\n\n' +
+               '客户端会重连。之后还要在 OpenClash / LuCI 里为 ' + prefix + '.0/24 加一条 ' +
+               'SRC-IP-CIDR 规则指向专用策略组（这条 App 写不了）。',
+      buttons: [
+        { text: '取消', color: colorString(C_TEXT_2, '#666666') },
+        { text: '建立', color: colorString(C_PRIMARY, '#0A59F7') }
+      ]
+    }).then((result: promptAction.ShowDialogSuccessResponse) => {
+      if (result.index === 1) {
+        this.createSubnet(ap, netName, prefix);
+      }
+    });
+  }
+
+  private async createSubnet(ap: ApItem, netName: string, prefix: string): Promise<void> {
+    this.busy = true;
+    this.toast('正在建立独立子网...');
+    try {
+      const created: string = await this.client.createSubnetForSsid(
+        ap.section, netName, prefix, this.lanZoneSection, this.lanZoneNetworks
+      );
+      if (created.length === 0) {
+        this.toast('建立失败（未提交的改动已回滚）');
+        return;
+      }
+      await this.reloadNetworkStack();
+      this.toast('已建立 ' + created + '（' + prefix + '.0/24）');
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /** 删除独立子网前的确认 */
+  private confirmDeleteSubnet(ap: ApItem): void {
+    promptAction.showDialog({
+      title: '退回 lan',
+      message: '删除「' + (ap.ssid.length > 0 ? ap.ssid : ap.section) + '」的独立子网 ' + ap.network + '：\n' +
+               '  从 lan 防火墙区域移除该网络\n' +
+               '  删除它的桥 / 静态接口 / DHCP 段\n' +
+               '  该 SSID 绑回 lan\n\n' +
+               '客户端会重连。',
+      buttons: [
+        { text: '取消', color: colorString(C_TEXT_2, '#666666') },
+        { text: '删除', color: colorString(C_DANGER, '#F53F3F') }
+      ]
+    }).then((result: promptAction.ShowDialogSuccessResponse) => {
+      if (result.index === 1) {
+        this.deleteSubnet(ap);
+      }
+    });
+  }
+
+  private async deleteSubnet(ap: ApItem): Promise<void> {
+    this.busy = true;
+    this.toast('正在删除子网...');
+    try {
+      const ok: boolean = await this.client.deleteSubnetForSsid(
+        ap.section, ap.network, this.lanZoneSection, this.lanZoneNetworks
+      );
+      if (!ok) {
+        this.toast('删除失败');
+        return;
+      }
+      await this.reloadNetworkStack();
+      this.toast('已退回 lan');
+    } finally {
+      this.busy = false;
+    }
+  }
+
+  /**
+   * 新子网生效要两步：reload netifd（加接口/桥）+ reload dnsmasq（新 DHCP 作用域），
+   * 然后重新加载页面数据。不能用 reload_config —— 那是脚本，file.exec 不在白名单。
+   */
+  private async reloadNetworkStack(): Promise<void> {
+    await this.client.applyWifi();
+    await this.client.reloadService('dnsmasq');
+    await this.sleep(6000);
+    await this.loadAll();
   }
 
   /** commit + 应用 + 重新加载 */

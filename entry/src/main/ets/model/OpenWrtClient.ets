@@ -825,6 +825,351 @@ export class OpenWrtClient {
     return r.success;
   }
 
+  // ======================== 独立子网（一个 SSID 一个网段） ========================
+
+  /**
+   * 新建一个 uci 段，返回段名（失败返回空串）。
+   *
+   * ⚠️ 不要用 `uci add_list` —— 它不在 ACL 白名单里。但**实测 rpcd 的 `uci set` 接受数组**：
+   * 对 list 选项会拆成多条 list-add（读回是 `network:["lan","air3"]`，`uci changes` 里也是两条
+   * list-add），所以给已有 zone 追加网络时直接 set 一个数组即可。
+   */
+  async addSection(config: string, type: string): Promise<string> {
+    const r: UbusResult<Record<string, Object>> = await this.ubusCallAuth<Record<string, Object>>(
+      'uci', 'add', json(`{"config":"${config}","type":"${type}"}`)
+    );
+    if (!r.success || !r.data) {
+      console.error(`[OpenWrtClient] uci.add ${config}.${type} 失败: code=${r.code}`);
+      return '';
+    }
+    return String(r.data['section'] || '');
+  }
+
+  /** 写任意 config 的一项（字符串值） */
+  async setOption(config: string, section: string, option: string, value: string): Promise<boolean> {
+    const body: Object = json(
+      `{"config":"${config}","section":"${section}","values":{"${option}":${JSON.stringify(value)}}}`
+    );
+    const r: UbusResult<Object> = await this.ubusCallAuth<Object>('uci', 'set', body);
+    if (!r.success) {
+      console.error(`[OpenWrtClient] uci.set ${config}.${section}.${option} 失败: code=${r.code}`);
+    }
+    return r.success;
+  }
+
+  /** 写 list 选项（实测传数组可用，会拆成多条 list-add） */
+  async setListOption(config: string, section: string, option: string, values: string[]): Promise<boolean> {
+    const body: Object = json(
+      `{"config":"${config}","section":"${section}","values":{"${option}":${JSON.stringify(values)}}}`
+    );
+    const r: UbusResult<Object> = await this.ubusCallAuth<Object>('uci', 'set', body);
+    if (!r.success) {
+      console.error(`[OpenWrtClient] uci.set(list) ${config}.${section}.${option} 失败: code=${r.code}`);
+    }
+    return r.success;
+  }
+
+  /** 删除任意段（不 commit） */
+  async deleteSection(config: string, section: string): Promise<boolean> {
+    const r: UbusResult<Object> = await this.ubusCallAuth<Object>(
+      'uci', 'delete', json(`{"config":"${config}","section":"${section}"}`)
+    );
+    return r.success;
+  }
+
+  /** 提交任意 config */
+  async commitConfig(config: string): Promise<boolean> {
+    const r: UbusResult<Object> = await this.ubusCallAuth<Object>(
+      'uci', 'commit', json(`{"config":"${config}"}`)
+    );
+    return r.success;
+  }
+
+  /**
+   * 重命名段（config interface 的**段名就是逻辑接口名**，所以要让它叫 air3 而不是 cfg0a1b2c）。
+   * uci rename 在 ACL 白名单里，实测可用。
+   */
+  async renameSection(config: string, section: string, newName: string): Promise<boolean> {
+    const r: UbusResult<Object> = await this.ubusCallAuth<Object>(
+      'uci', 'rename', json(`{"config":"${config}","section":"${section}","name":"${newName}"}`)
+    );
+    if (!r.success) {
+      console.error(`[OpenWrtClient] uci.rename ${config}.${section} -> ${newName} 失败: code=${r.code}`);
+    }
+    return r.success;
+  }
+
+  /** 取某个 config 的全部段（values 形态） */
+  async getUciValues(config: string): Promise<Record<string, Object>> {
+    const r: UbusResult<Record<string, Object>> = await this.ubusCallAuth<Record<string, Object>>(
+      'uci', 'get', json(`{"config":"${config}"}`)
+    );
+    if (r.success && r.data) {
+      const values: Record<string, Object> | undefined = r.data['values'] as Record<string, Object>;
+      if (values) {
+        return values;
+      }
+    }
+    return {};
+  }
+
+  /** lan zone 的段名（给新子网追加网络时要用） */
+  async findLanZoneSection(): Promise<string> {
+    const values: Record<string, Object> = await this.getUciValues('firewall');
+    const names: string[] = Object.keys(values);
+    for (let i = 0; i < names.length; i++) {
+      const sec: Record<string, Object> = values[names[i]] as Record<string, Object>;
+      if (String(sec['.type'] || '') === 'zone' && String(sec['name'] || '') === 'lan') {
+        return names[i];
+      }
+    }
+    return '';
+  }
+
+  /** lan zone 当前的 network 列表（追加时要在原列表基础上加） */
+  async getLanZoneNetworks(lanZoneSection: string): Promise<string[]> {
+    if (lanZoneSection.length === 0) {
+      return [];
+    }
+    const r: UbusResult<Record<string, Object>> = await this.ubusCallAuth<Record<string, Object>>(
+      'uci', 'get', json(`{"config":"firewall","section":"${lanZoneSection}"}`)
+    );
+    if (!r.success || !r.data) {
+      return [];
+    }
+    const values: Record<string, Object> | undefined = r.data['values'] as Record<string, Object>;
+    if (!values) {
+      return [];
+    }
+    return this.toStringList(values['network']);
+  }
+
+  /**
+   * 找一个没被占用的 192.168.N.0/24，返回网关前缀（如 `192.168.3`）。
+   * 只看 network 里各 interface 的 ipaddr，从 .3 开始找。
+   */
+  async findFreeSubnetPrefix(): Promise<string> {
+    const used: string[] = [];
+    const nets: NetworkCfg[] = await this.getNetworkConfigs();
+    for (let i = 0; i < nets.length; i++) {
+      if (nets[i].subnet.length > 0) {
+        used.push(nets[i].subnet.split('/')[0]);
+      }
+    }
+    for (let n = 3; n < 250; n++) {
+      const prefix: string = `192.168.${n}`;
+      if (used.indexOf(`${prefix}.0`) < 0 && used.indexOf(`${prefix}.1`) < 0) {
+        return prefix;
+      }
+    }
+    return '';
+  }
+
+  /**
+   * 给某个 SSID 建独立子网：新桥 + 静态接口 + DHCP + 加入 lan zone + 把 AP 绑过去。
+   *
+   * 配方依据（都在真机上验证过）：
+   *   - `br-lan` 的 `ports` 只有 lan2/3/4，**无线接口不在 ports 里也能进桥**（靠 wifi-iface 的
+   *     `network` 选项动态加入），所以新桥不用写 ports；
+   *   - `uci set` 支持数组 → 把新网络追加进现有 lan zone 的 network 列表（等价 LuCI 的做法），
+   *     不必新建 zone（新建 zone 还要配 forwarding，而且 OpenClash 是否拦截新 zone 不确定）；
+   *   - DHCP 参数照抄 lan 段：start=100 limit=150 leasetime=12h dhcpv6=disabled ra=disabled；
+   *   - 接口段名 = 逻辑接口名，所以先 add 再 rename 成 netName。
+   *
+   * 任何一步失败都会**回滚已建的段**（未 commit 的增量删掉即归零，磁盘配置保持原样）。
+   * 成功返回 netName；失败返回空串。
+   */
+  async createSubnetForSsid(
+    apSection: string, netName: string, gwPrefix: string, lanZoneSection: string, lanNetworks: string[]
+  ): Promise<string> {
+    const cfgs: string[] = [];
+    const secs: string[] = [];
+
+    // 1) 桥设备 br-<net>
+    const devSec: string = await this.addSection('network', 'device');
+    if (devSec.length === 0) {
+      return '';
+    }
+    cfgs.push('network');
+    secs.push(devSec);
+    let ok: boolean = await this.setOption('network', devSec, 'name', `br-${netName}`);
+    if (ok) {
+      ok = await this.setOption('network', devSec, 'type', 'bridge');
+    }
+
+    // 2) 静态接口（add 后 rename 成 netName，段名即逻辑接口名）
+    if (ok) {
+      const ifSec: string = await this.addSection('network', 'interface');
+      if (ifSec.length === 0) {
+        ok = false;
+      } else {
+        cfgs.push('network');
+        secs.push(ifSec);
+        ok = await this.renameSection('network', ifSec, netName);
+        if (ok) {
+          ok = await this.setOption('network', netName, 'proto', 'static');
+        }
+        if (ok) {
+          ok = await this.setOption('network', netName, 'device', `br-${netName}`);
+        }
+        if (ok) {
+          ok = await this.setOption('network', netName, 'ipaddr', `${gwPrefix}.1`);
+        }
+        if (ok) {
+          ok = await this.setOption('network', netName, 'netmask', '255.255.255.0');
+        }
+      }
+    }
+
+    // 3) DHCP（照抄 lan 段）
+    if (ok) {
+      const dSec: string = await this.addSection('dhcp', 'dhcp');
+      if (dSec.length === 0) {
+        ok = false;
+      } else {
+        cfgs.push('dhcp');
+        secs.push(dSec);
+        ok = await this.setOption('dhcp', dSec, 'interface', netName);
+        if (ok) {
+          ok = await this.setOption('dhcp', dSec, 'start', '100');
+        }
+        if (ok) {
+          ok = await this.setOption('dhcp', dSec, 'limit', '150');
+        }
+        if (ok) {
+          ok = await this.setOption('dhcp', dSec, 'leasetime', '12h');
+        }
+        if (ok) {
+          ok = await this.setOption('dhcp', dSec, 'dhcpv6', 'disabled');
+        }
+        if (ok) {
+          ok = await this.setOption('dhcp', dSec, 'ra', 'disabled');
+        }
+      }
+    }
+
+    // 4) 追加进 lan zone 的 network 列表（数组 set）
+    if (ok) {
+      const nets: string[] = [];
+      for (let i = 0; i < lanNetworks.length; i++) {
+        nets.push(lanNetworks[i]);
+      }
+      nets.push(netName);
+      ok = await this.setListOption('firewall', lanZoneSection, 'network', nets);
+    }
+
+    // 5) 把该 AP 绑到新 network
+    if (ok) {
+      ok = await this.setWifiOption(apSection, 'network', netName);
+    }
+
+    if (!ok) {
+      await this.rollbackSections(cfgs, secs);
+      return '';
+    }
+
+    // 6) 落盘（四个 config 一起 commit）
+    let committed: boolean = await this.commitConfig('network');
+    if (committed) {
+      committed = await this.commitConfig('dhcp');
+    }
+    if (committed) {
+      committed = await this.commitConfig('firewall');
+    }
+    if (committed) {
+      committed = await this.commitWifi();
+    }
+    if (!committed) {
+      console.error('[OpenWrtClient] 独立子网 commit 失败（段已建好但可能没落盘）');
+      return '';
+    }
+    console.info(`[OpenWrtClient] 已为 ${apSection} 建独立子网 ${netName}（${gwPrefix}.1/24）`);
+    return netName;
+  }
+
+  /**
+   * 删除独立子网并把 SSID 退回 lan：
+   * 摘掉 zone 列表里的该网络 → AP 绑回 lan → 删掉 interface/device/dhcp 段 → commit。
+   */
+  async deleteSubnetForSsid(
+    apSection: string, netName: string, lanZoneSection: string, lanNetworks: string[]
+  ): Promise<boolean> {
+    // 1) zone 列表摘掉该网络
+    const kept: string[] = [];
+    for (let i = 0; i < lanNetworks.length; i++) {
+      if (lanNetworks[i] !== netName) {
+        kept.push(lanNetworks[i]);
+      }
+    }
+    if (kept.length === 0) {
+      kept.push('lan');
+    }
+    let ok: boolean = await this.setListOption('firewall', lanZoneSection, 'network', kept);
+
+    // 2) AP 退回 lan
+    if (ok) {
+      ok = await this.setWifiOption(apSection, 'network', 'lan');
+    }
+
+    // 3) 找出该 network 对应的段并删除
+    if (ok) {
+      const netValues: Record<string, Object> = await this.getUciValues('network');
+      const names: string[] = Object.keys(netValues);
+      let ifaceSec: string = '';
+      let devSec: string = '';
+      for (let i = 0; i < names.length; i++) {
+        const sec: Record<string, Object> = netValues[names[i]] as Record<string, Object>;
+        const type: string = String(sec['.type'] || '');
+        if (type === 'interface' && names[i] === netName) {
+          ifaceSec = names[i];
+        }
+        if (type === 'device' && String(sec['name'] || '') === `br-${netName}`) {
+          devSec = names[i];
+        }
+      }
+      if (ifaceSec.length > 0) {
+        ok = await this.deleteSection('network', ifaceSec);
+      }
+      if (ok && devSec.length > 0) {
+        ok = await this.deleteSection('network', devSec);
+      }
+    }
+    if (ok) {
+      const dhcpValues: Record<string, Object> = await this.getUciValues('dhcp');
+      const dNames: string[] = Object.keys(dhcpValues);
+      for (let i = 0; i < dNames.length; i++) {
+        const sec: Record<string, Object> = dhcpValues[dNames[i]] as Record<string, Object>;
+        if (String(sec['.type'] || '') === 'dhcp' && String(sec['interface'] || '') === netName) {
+          ok = await this.deleteSection('dhcp', dNames[i]);
+        }
+      }
+    }
+
+    if (!ok) {
+      return false;
+    }
+    let committed: boolean = await this.commitConfig('network');
+    if (committed) {
+      committed = await this.commitConfig('dhcp');
+    }
+    if (committed) {
+      committed = await this.commitConfig('firewall');
+    }
+    if (committed) {
+      committed = await this.commitWifi();
+    }
+    console.info(`[OpenWrtClient] 已删除独立子网 ${netName}，${apSection} 退回 lan`);
+    return committed;
+  }
+
+  /** 回滚本次新建的（未提交的）段 */
+  private async rollbackSections(cfgs: string[], secs: string[]): Promise<void> {
+    for (let i = secs.length - 1; i >= 0; i--) {
+      await this.deleteSection(cfgs[i], secs[i]);
+    }
+    console.warn('[OpenWrtClient] 建子网失败，已回滚未提交的段（磁盘配置未改动）');
+  }
+
   /** 当前配置里所有 wifi-iface 段名 */
   private async wifiIfaceSections(): Promise<string[]> {
     const out: string[] = [];
@@ -1302,6 +1647,11 @@ export class OpenWrtClient {
    */
   async restartService(serviceName: string): Promise<UbusResult<Object>> {
     return this.ubusCallAuth<Object>('rc', 'init', json(`{"name":"${serviceName}","action":"restart"}`));
+  }
+
+  /** reload 服务（rc.init + action=reload）：例如新子网建好后 reload dnsmasq 让 DHCP 作用域生效 */
+  async reloadService(serviceName: string): Promise<UbusResult<Object>> {
+    return this.ubusCallAuth<Object>('rc', 'init', json(`{"name":"${serviceName}","action":"reload"}`));
   }
 
   /** 启动服务（同样走 rc.init） */
