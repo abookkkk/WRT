@@ -54,6 +54,12 @@
    `code === 0` 才算成功；非 0 或返回 `error` 对象都算失败。
 3. **匿名 session id 是 32 个 0**：`00000000000000000000000000000000`，只有 `session.login` 能用它。
 4. **登录**：`session.login`，参数 `{"username":"root","password":"..."}`，成功返回 `ubus_rpc_session`（32 位）和 `timeout`（300 秒）。
+5. ⚠️ **构造 JSON 一律用 `JSON.stringify` 转义，不要拼字符串。**
+   踩过的坑：`session.login` 与 `setWifiOption` 把密码 / SSID 直接插进 JSON 串里，值里只要有一个 `"` 或 `\`，
+   请求体就不是合法 JSON，路由器只会回一个含糊的失败（表现为"登录失败 / 保存失败"，很难查）。
+   现在 `uciSetBody()`（客户端里的小 helper）负责 uci.set 的转义，ubus 请求体的
+   `sessionId / obj / func / args` 四个元素也都过 `JSON.stringify`。
+   实测：SSID 写成含反斜杠的值能正常落盘、读回一致。
 
 > ⚠️ **两种失败形态必须分开处理**（本项目踩过，也是"登录过期"被显示成"请求异常"的根因）：
 > - `{"result":[<code>, ...]}` 且 `code != 0` —— **ubus 层**错误（4=参数错、6=权限/路径不在白名单）；

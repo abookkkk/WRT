@@ -72,6 +72,20 @@ function json(text: string): Object {
   return JSON.parse(text);
 }
 
+/**
+ * 构造 `uci.set` 的 params —— **值一律走 JSON.stringify，绝不直接拼进串里**。
+ *
+ * 为什么单拎一个函数：SSID、WiFi 密码、network 名这些是用户输入的，
+ * 里面只要有一个 `"` 或 `\`，拼出来就不再是合法 JSON，路由器只会回一个含糊的失败
+ * （表现为"保存失败 / 登录失败"，追起来很费劲）。
+ * key（config / section / option）也一起转义：反正不花代价，省得以后再踩。
+ */
+function uciSetBody(config: string, section: string, option: string, valueJson: string): Object {
+  return json('{"config":' + JSON.stringify(config) +
+    ',"section":' + JSON.stringify(section) +
+    ',"values":{' + JSON.stringify(option) + ':' + valueJson + '}}');
+}
+
 export class OpenWrtClient {
   private baseUrl: string;
   private host: string;
@@ -106,7 +120,7 @@ export class OpenWrtClient {
         ANONYMOUS_SESSION,
         'session',
         'login',
-        json(`{"username":"${username}","password":"${password}"}`)
+        json('{"username":' + JSON.stringify(username) + ',"password":' + JSON.stringify(password) + '}')
       );
       if (result.success && result.data) {
         this.sessionId = result.data.ubus_rpc_session;
@@ -847,9 +861,7 @@ export class OpenWrtClient {
 
   /** 写任意 config 的一项（字符串值） */
   async setOption(config: string, section: string, option: string, value: string): Promise<boolean> {
-    const body: Object = json(
-      `{"config":"${config}","section":"${section}","values":{"${option}":${JSON.stringify(value)}}}`
-    );
+    const body: Object = uciSetBody(config, section, option, JSON.stringify(value));
     const r: UbusResult<Object> = await this.ubusCallAuth<Object>('uci', 'set', body);
     if (!r.success) {
       console.error(`[OpenWrtClient] uci.set ${config}.${section}.${option} 失败: code=${r.code}`);
@@ -859,9 +871,7 @@ export class OpenWrtClient {
 
   /** 写 list 选项（实测传数组可用，会拆成多条 list-add） */
   async setListOption(config: string, section: string, option: string, values: string[]): Promise<boolean> {
-    const body: Object = json(
-      `{"config":"${config}","section":"${section}","values":{"${option}":${JSON.stringify(values)}}}`
-    );
+    const body: Object = uciSetBody(config, section, option, JSON.stringify(values));
     const r: UbusResult<Object> = await this.ubusCallAuth<Object>('uci', 'set', body);
     if (!r.success) {
       console.error(`[OpenWrtClient] uci.set(list) ${config}.${section}.${option} 失败: code=${r.code}`);
@@ -1282,8 +1292,7 @@ export class OpenWrtClient {
    */
   async setWifiOption(section: string, option: string, value: string): Promise<boolean> {
     const r: UbusResult<Object> = await this.ubusCallAuth<Object>(
-      'uci', 'set',
-      json(`{"config":"wireless","section":"${section}","values":{"${option}":"${value}"}}`)
+      'uci', 'set', uciSetBody('wireless', section, option, JSON.stringify(value))
     );
     return r.success;
   }
@@ -1764,9 +1773,11 @@ export class OpenWrtClient {
   ): Promise<UbusResult<T>> {
     const requestId: number = ++requestIdCounter;
 
-    // 手动构建 JSON-RPC 请求字符串（避免对象字面量）
-    const bodyStr: string = `{"jsonrpc":"2.0","id":${requestId},"method":"call",` +
-      `"params":["${sessionId}","${obj}","${func}",${JSON.stringify(args)}]}`;
+    // 手动构建 JSON-RPC 请求字符串（避免对象字面量）。
+    // 四个元素全部过一遍 JSON.stringify：sessionId / obj / func 目前都是十六进制串或代码常量，
+    // 但拼字符串这事迟早会踩到引号、反斜杠（登录密码 / SSID 就是这么坏掉的），不如一律转义。
+    const bodyStr: string = `{"jsonrpc":"2.0","id":${requestId},"method":"call","params":[` +
+      `${JSON.stringify(sessionId)},${JSON.stringify(obj)},${JSON.stringify(func)},${JSON.stringify(args)}]}`;
 
     try {
       const response: HttpResult = await this.httpRequest(

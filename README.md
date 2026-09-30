@@ -235,4 +235,6 @@ clashInfoRows() { Column() { Row() { Text('版本'); Text(this.version) } } }
       `SRC-IP-CIDR,<子网>,<策略组>` 规则仍要在 LuCI / SSH 里配 —— 详见 `PLAN.md`
 - [ ] 暂未做路由器重启按钮（`system.reboot` 已可用）
 - [ ] `bundleName` 还是默认的 `com.example.myapplication`，正式发布前需要改
-- [ ] `OpenWrtClient` 用字符串拼接构造 JSON（`session.login`、`setWifiOption`）：密码 / SSID 里含 `"` 或 `\` 时请求体会坏掉，应改用 `JSON.stringify`
+- [x] **修掉「用字符串拼 JSON」的隐患** —— `session.login` 的用户名/密码、`setWifiOption` 的值、uci.set 家族，
+      以及 ubus 请求体本身的 `sessionId / obj / func / args`，现在一律走 `JSON.stringify` 转义，
+      密码 / SSID 里含 `"` 或 `\` 不会再破坏请求体。实测把 2.4G 的 SSID 写成含反斜杠的值能正常落盘（读回一致，随后已还原）
