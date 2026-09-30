@@ -9,7 +9,7 @@ import type { SystemBoard, SystemInfo, NetDeviceStats } from '../model/OpenWrtMo
 import {
   C_PRIMARY, C_SUCCESS, C_WARNING, C_DANGER, C_DIVIDER,
   C_TEXT_1, C_TEXT_2, C_TEXT_3, C_CARD,
-  F_SECTION, F_TINY, R_CARD, SP_S, SP_M, SP_XL, ICON_S,
+  F_SECTION, F_TINY, R_CARD, SP_S, SP_M, SP_XL, TAB_BAR_SPACE, ICON_S,
   colorString, colorRgba
 } from '../common/Theme';
 import { shouldShowErrorPage, shouldToast, notifyLoadFailed } from '../common/RefreshPolicy';
@@ -244,7 +244,7 @@ export struct DashboardPage {
               .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 })
               .onClick(() => this.onOpenDevices());
             }
-            .width('100%').padding(16)
+            .width('100%').padding({ left: 16, right: 16, top: 16, bottom: TAB_BAR_SPACE })
           }
           .width('100%').height('100%')
           .scrollable(ScrollDirection.Vertical)

@@ -121,6 +121,8 @@ export const SP_S: number = 8;
 export const SP_M: number = 12;
 export const SP_L: number = 16;
 export const SP_XL: number = 20;
+/** 悬浮标签栏占的高度：可滚动内容底部要留这么多，最后一行才不会被栏盖住（栏 62vp + 一点余量） */
+export const TAB_BAR_SPACE: number = 74;
 
 // ===================== 字号 =====================
 

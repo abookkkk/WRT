@@ -580,6 +580,15 @@ private onPullRefresh(): void {
 - 下载完**必须校验**：实测把 404 的 9 字节错误正文当成了下载成功（`requestInStream` 的状态码回调常常在
   `dataEnd` **之后**才来）。现在会等 400ms 拿状态码，并比对预期字节数。
 
+### 13. 让内容从底部标签栏下面滚过：`Tabs.barOverlap(true)`
+
+想做出鸿蒙那种通透观感（卡片从标签栏下滚过并被虚化），关键就一行 **`Tabs.barOverlap(true)`** ——
+标签栏叠在内容之上，Tabs 的内容区因此铺到屏幕底部。⚠️ 代价是**各页要自己留底部余量**，
+不然最后一行会被栏盖住：`common/Theme.ets` 里已加令牌 **`TAB_BAR_SPACE`（74vp = 栏高 62 + 余量）**，
+四个 Tab 页（仪表盘 / 网络 / 无线 / Clash）的内容 Column 都用它做 `padding.bottom`。
+标签栏的底色与模糊仍由 `barBackgroundColor(C_BAR)` + `barBackgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)` 控制
+（`c_bar` 是 35% 不透明的半透明色，两套调色板各一份）。
+
 ---
 
 ## 八、构建 / 部署备忘

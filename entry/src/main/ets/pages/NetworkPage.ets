@@ -15,7 +15,7 @@ import {
   C_PRIMARY, C_SUCCESS, C_WARNING, C_TEXT_1, C_TEXT_2, C_TEXT_3,
   C_CARD, C_DIVIDER, C_FILL, C_SUCCESS_CHIP, C_WARNING_CHIP,
   F_SECTION, F_BODY, F_CAPTION, F_TINY,
-  R_CARD, R_CHIP, SP_S, SP_M, SP_L, SP_XL, ICON_S
+  R_CARD, R_CHIP, SP_S, SP_M, SP_L, SP_XL, TAB_BAR_SPACE, ICON_S
 } from '../common/Theme';
 import { shouldShowErrorPage, shouldToast, notifyLoadFailed } from '../common/RefreshPolicy';
 import type { LoadKind } from '../common/RefreshPolicy';
@@ -77,7 +77,7 @@ export struct NetworkPage {
               });
             }
             .width('100%')
-            .padding(SP_L)
+            .padding({ left: SP_L, right: SP_L, top: SP_L, bottom: TAB_BAR_SPACE })
           }
           .width('100%')
           .height('100%')

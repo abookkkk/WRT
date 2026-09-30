@@ -27,7 +27,7 @@ import {
   C_PRIMARY, C_SUCCESS, C_WARNING, C_DANGER, C_TEXT_1, C_TEXT_2, C_TEXT_3,
   C_CARD, C_DIVIDER, C_FILL, C_SUCCESS_CHIP,
   F_SECTION, F_BODY, F_CAPTION, F_TINY,
-  R_CARD, R_CHIP, SP_S, SP_M, SP_L, SP_XL, colorString
+  R_CARD, R_CHIP, SP_S, SP_M, SP_L, SP_XL, TAB_BAR_SPACE, colorString
 } from '../common/Theme';
 
 const COLOR_CARD_BG: ResourceColor = C_CARD;
@@ -99,7 +99,7 @@ export struct OpenClashPage {
             this.helpCard();
           }
           .width('100%')
-          .padding(SP_L)
+          .padding({ left: SP_L, right: SP_L, top: SP_L, bottom: TAB_BAR_SPACE })
         }
         .width('100%')
         .height('100%')

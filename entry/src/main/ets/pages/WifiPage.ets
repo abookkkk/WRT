@@ -34,7 +34,7 @@ import type {
   NetworkCfg
 } from '../model/OpenWrtModels';
 import {
-  C_PRIMARY, C_SUCCESS, C_WARNING, C_DANGER, C_TEXT_1, C_TEXT_2, C_TEXT_3, C_CARD, C_FILL,
+  C_PRIMARY, C_SUCCESS, C_WARNING, C_DANGER, C_TEXT_1, C_TEXT_2, C_TEXT_3, C_CARD, C_FILL, TAB_BAR_SPACE,
   colorString
 } from '../common/Theme';
 import { shouldShowErrorPage, shouldToast, notifyLoadFailed } from '../common/RefreshPolicy';
@@ -195,7 +195,7 @@ export struct WifiPage {
               .width('100%').padding(16)
               .backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM);
             }
-            .width('100%').padding(16)
+            .width('100%').padding({ left: 16, right: 16, top: 16, bottom: TAB_BAR_SPACE })
           }
           .width('100%').height('100%')
           .edgeEffect(EdgeEffect.Spring)

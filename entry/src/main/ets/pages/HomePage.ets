@@ -235,6 +235,8 @@ export struct HomePage {
           .layoutWeight(1)
           .width('100%')
           .barHeight(62)
+          // 让标签栏"浮"在内容之上：内容因此能一直铺到屏幕底部并从栏下滚过去，栏的毛玻璃会把它们虚化
+          .barOverlap(true)
           .barMode(BarMode.Fixed)
           .barBackgroundColor(C_BAR)
           .barBackgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
