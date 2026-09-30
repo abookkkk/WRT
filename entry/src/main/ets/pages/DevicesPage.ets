@@ -4,9 +4,16 @@
  * 展示路由器的 DHCP 租约列表。
  */
 
+import { promptAction } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
 import { OpenWrtClient } from '../model/OpenWrtClient';
+import { DeviceNotes } from '../model/DeviceNotes';
+import { GlobalContext } from '../model/GlobalContext';
 import type { DhcpLease } from '../model/OpenWrtModels';
-import { C_PRIMARY, C_SUCCESS, C_DANGER, C_TEXT_2, C_TEXT_3, C_CARD } from '../common/Theme';
+import {
+  C_PRIMARY, C_SUCCESS, C_DANGER, C_TEXT_1, C_TEXT_2, C_TEXT_3,
+  C_CARD, C_CARD_SOLID, C_FILL
+} from '../common/Theme';
 import { shouldShowErrorPage, shouldToast, notifyLoadFailed } from '../common/RefreshPolicy';
 import type { LoadKind } from '../common/RefreshPolicy';
 
@@ -21,6 +28,13 @@ export struct DevicesPage {
   private client!: OpenWrtClient;
 
   @State private devices: DhcpLease[] = [];
+  /** 设备备注（本机 preferences；键是 MAC 小写）。改完换成新对象引用才会重绘 */
+  @State private notes: Record<string, string> = {};
+  /** 备注的读写（只存本机，不写路由器） */
+  private notesStore: DeviceNotes = new DeviceNotes();
+  /** 备注编辑框（每次编辑现建一个，绑当前这台设备） */
+  private noteDialog: CustomDialogController | null = null;
+
   @State private isLoading: boolean = true;
   @State private isRefreshing: boolean = false;
   @State private hasError: boolean = false;
@@ -28,6 +42,7 @@ export struct DevicesPage {
   @State private activeCount: number = 0;
 
   aboutToAppear(): void {
+    this.loadNotes();
     this.loadData();
   }
 
@@ -72,6 +87,13 @@ export struct DevicesPage {
                         Text(device.mac)
                           .fontSize(13).fontColor(COLOR_SECONDARY)
                           .fontFamily('monospace').margin({ top: 2 });
+                        // 备注（本机存的，hostname 为空时尤其管用）
+                        if (this.noteOf(device.mac).length > 0) {
+                          Text('备注：' + this.noteOf(device.mac))
+                            .fontSize(12).fontColor(COLOR_PRIMARY)
+                            .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                            .margin({ top: 2 });
+                        }
                       }
                       .layoutWeight(1)
                       // Column 的 alignItems 默认是 Center，不写的话主机名/MAC 会居中
@@ -88,16 +110,24 @@ export struct DevicesPage {
                       Text(device.ip).fontSize(14).fontWeight(FontWeight.Medium).fontFamily('monospace');
                       Text(this.formatExpiry(device.end))
                         .fontSize(12)
-                        .fontColor(this.isLeaseActive(device) ? COLOR_SECONDARY : C_DANGER);
+                        .fontColor(this.isLeaseActive(device) ? COLOR_SECONDARY : C_DANGER)
+                        .layoutWeight(1).textAlign(TextAlign.End).margin({ left: 8 });
+                      // 备注入口：弹一个带输入框的对话框
+                      Button(this.noteOf(device.mac).length > 0 ? '改备注' : '备注')
+                        .fontSize(11).height(26).type(ButtonType.Capsule)
+                        .backgroundColor(C_FILL).fontColor(COLOR_PRIMARY)
+                        .margin({ left: 10 })
+                        .onClick(() => this.openNoteDialog(device));
                     }
-                    .width('100%').justifyContent(FlexAlign.SpaceBetween);
+                    .width('100%').alignItems(VerticalAlign.Center);
                   }
                   .width('100%').padding(16).backgroundColor(COLOR_CARD_BG)
                   .borderRadius(18).shadow(ShadowStyle.OUTER_DEFAULT_SM)
                   .margin({ bottom: 10 });
                 }
               }, (device: DhcpLease, index?: number) => {
-                return device.mac + device.ip;
+                // key 里带上备注：备注改了才会重建这张卡（ArkUI 会复用条目节点，不换 key 不刷新）
+                return device.mac + device.ip + '#' + this.noteOf(device.mac);
               });
             }
             .width('100%')
@@ -140,6 +170,57 @@ export struct DevicesPage {
       }
     }
     .width('100%').height('100%')
+  }
+
+  // ==================== 设备备注（只存本机） ====================
+
+  /** 读本机备注。异步读完换成新对象，触发列表重绘 */
+  private async loadNotes(): Promise<void> {
+    try {
+      const ctx: common.Context | null = GlobalContext.getInstance().getContext();
+      if (!ctx) {
+        return;
+      }
+      await this.notesStore.init(ctx);
+      this.notes = this.notesStore.snapshot();
+    } catch (e) {
+      console.warn('[Devices] 读取设备备注失败: ' + JSON.stringify(e));
+    }
+  }
+
+  /** 一台设备的备注，没设过是空串 */
+  private noteOf(mac: string): string {
+    const v: string | undefined = this.notes[mac.toLowerCase()];
+    return v === undefined ? '' : v;
+  }
+
+  /** 弹出备注编辑框（每台设备现建一个 controller，绑上它的名字 / IP / MAC） */
+  private openNoteDialog(device: DhcpLease): void {
+    const mac: string = device.mac.toLowerCase();
+    this.noteDialog = new CustomDialogController({
+      builder: DeviceNoteDialog({
+        deviceName: device.hostname.length > 0 ? device.hostname : '(未命名设备)',
+        deviceInfo: device.ip + ' · ' + device.mac,
+        initialNote: this.noteOf(mac),
+        onSave: (note: string) => {
+          this.saveNote(mac, note);
+        }
+      }),
+      autoCancel: true,
+      customStyle: true,
+      alignment: DialogAlignment.Center
+    });
+    this.noteDialog.open();
+  }
+
+  /** 存备注（空串 = 清除） */
+  private async saveNote(mac: string, note: string): Promise<void> {
+    const ok: boolean = await this.notesStore.set(mac, note);
+    this.notes = this.notesStore.snapshot();
+    promptAction.showToast({
+      message: ok ? (note.trim().length > 0 ? '备注已保存' : '备注已清除') : '备注保存失败',
+      duration: 1500
+    });
   }
 
   // ==================== 数据加载 ====================
@@ -228,5 +309,67 @@ export struct DevicesPage {
     }
     const idx: number = Math.abs(hash) % colors.length;
     return colors[idx];
+  }
+}
+
+/**
+ * 备注编辑对话框。
+ *
+ * 为什么用对话框而不是卡片内联编辑：在线设备是二级页面，列表在滚动容器里，
+ * 内联输入框会被键盘顶来顶去；系统的对话框会自动避让键盘。
+ * 只在 DevicesPage 里用，所以直接放同一个文件。
+ */
+@CustomDialog
+struct DeviceNoteDialog {
+  controller?: CustomDialogController;
+  deviceName: string = '';
+  deviceInfo: string = '';
+  initialNote: string = '';
+  onSave: (note: string) => void = () => {};
+
+  @State private text: string = '';
+
+  aboutToAppear(): void {
+    this.text = this.initialNote;
+  }
+
+  build() {
+    Column() {
+      Text('设备备注')
+        .fontSize(17).fontWeight(FontWeight.Bold).fontColor(C_TEXT_1).width('100%');
+      Text(this.deviceName)
+        .fontSize(14).fontColor(C_TEXT_2).width('100%').margin({ top: 6 })
+        .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+      Text(this.deviceInfo)
+        .fontSize(12).fontColor(C_TEXT_3).width('100%').margin({ top: 2 })
+        .fontFamily('monospace');
+
+      TextInput({ text: this.text, placeholder: '如：客厅电视（留空 = 清除备注）' })
+        .width('100%')
+        .fontSize(14)
+        .margin({ top: 14 })
+        .onChange((v: string) => { this.text = v; });
+
+      Row() {
+        Button('取消')
+          .fontSize(14).height(36).type(ButtonType.Capsule)
+          .backgroundColor(C_FILL).fontColor(C_TEXT_2)
+          .layoutWeight(1)
+          .onClick(() => { this.controller?.close(); });
+        Button('保存')
+          .fontSize(14).height(36).type(ButtonType.Capsule)
+          .backgroundColor(C_PRIMARY).fontColor(Color.White)
+          .layoutWeight(1).margin({ left: 10 })
+          .onClick(() => {
+            this.onSave(this.text);
+            this.controller?.close();
+          });
+      }
+      .width('100%').margin({ top: 16 });
+    }
+    .width('100%')
+    .padding(20)
+    .backgroundColor(C_CARD_SOLID)
+    .borderRadius(20);
   }
 }

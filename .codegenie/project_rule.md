@@ -328,6 +328,10 @@ clashInfoRows() {
 
 **症状**：日志显示数据已经拿到了，但界面上一直显示初始值（`--`）。
 
+**同类坑：`ForEach` 会复用条目节点。** 条目上显示的某个值改了、但 key 没变时，那一行不会刷新。
+`DevicesPage` 的设备卡 key 里就带上了备注（`device.mac + device.ip + '#' + 备注`），
+备注一改 key 就变，卡片才会重建。
+
 ### 3. 其他约定
 
 - 用 `import { http } from '@kit.NetworkKit'` 或 `import http from '@ohos.net.http'` 都行，后者已废弃但仍可用。
@@ -455,6 +459,12 @@ List() { ... }
 `type == "SRC-IP-CIDR"` 且 payload 命中该子网 → 策略组；`/rules` 最后一条 `MATCH` → 默认策略组；
 再用 `/proxies` 取每个组当前的 `now`。
 **不要**拿目的地址的 `IP-CIDR` / 域名规则去推断「这个 SSID 从哪出去」。
+
+**设备备注存本机，不写路由器**：路由器上能改的是 `dhcp` 的静态租约 / hostname，
+那会真的改变 dnsmasq 的分配行为；而备注只是给自己看的名字。实现是
+`model/DeviceNotes.ets`（preferences，键用 **MAC 小写**：租约里 MAC 唯一且稳定，IP 会变、
+hostname 可能是空的），界面用 `@CustomDialog` + `TextInput`（比在滚动列表里内联输入框好，
+系统对话框会自动避让键盘）。清除备注就是把值存成空串 —— 别用 `delete`。
 
 **发射功率**：`iwinfo.txpowerlist`（本机 0~23 dBm，`active` 标当前值）可枚举，
 写 `wireless.<radio>.txpower`；选「自动」就 `uci delete` 掉该项，回到驱动默认。
