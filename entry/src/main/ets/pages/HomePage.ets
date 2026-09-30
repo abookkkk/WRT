@@ -27,14 +27,16 @@ import { AboutPage } from './AboutPage';
 import { OpenClashPage } from './OpenClashPage';
 import {
   C_PRIMARY, C_BG_TOP, C_BG_MID, C_BG_BOTTOM, C_TEXT_1, C_TEXT_2, C_TEXT_3, C_DANGER,
-  C_FILL, C_DANGER_CHIP, C_DIVIDER,
+  C_FILL, C_DANGER_CHIP, C_DIVIDER, C_PRIMARY_SOFT,
   F_HERO, F_TITLE, F_SECTION, F_CAPTION, F_TINY, ICON_L, ICON_M, SP_XS, SP_S, SP_M, SP_L, colorString
 } from '../common/Theme';
 
 /** 顶栏内容高度（标题那一行 + 上下内边距，不含状态栏高度）：页面顶部留白按它算 */
 const HEADER_CONTENT_HEIGHT: number = 72;
-/** 底部标签栏内容高度（不含手势条高度） */
-const TAB_BAR_CONTENT_HEIGHT: number = 62;
+/** 底部悬浮胶囊标签栏高度（不含手势条高度与两侧留边） */
+const TAB_BAR_CONTENT_HEIGHT: number = 60;
+/** 胶囊内单个 Tab 的高度：比胶囊矮一圈，选中时的药丸高亮才不会贴到胶囊边 */
+const TAB_ITEM_HEIGHT: number = TAB_BAR_CONTENT_HEIGHT - 12;
 
 @Component
 export struct HomePage {
@@ -128,7 +130,8 @@ export struct HomePage {
       this.topInset = px2vp(systemArea.topRect.height);
       this.bottomInset = px2vp(bottomPx);
       AppStorage.setOrCreate('safeTop', this.topInset + HEADER_CONTENT_HEIGHT);
-      AppStorage.setOrCreate('safeBottom', this.bottomInset + TAB_BAR_CONTENT_HEIGHT);
+      // 胶囊栏是"浮"在屏幕下沿上方的：底部让开手势条 + 下边距，页面底部留白要按这个总高度算
+      AppStorage.setOrCreate('safeBottom', this.bottomInset + TAB_BAR_CONTENT_HEIGHT + 16);
       console.info(`[HomePage] 安全区：状态栏 ${this.topInset}vp / 手势条 ${this.bottomInset}vp`);
     } catch (e) {
       // 拿不到就退回 0：两根栏少铺一点，功能不受影响
@@ -285,47 +288,60 @@ export struct HomePage {
               this.currentIndex = index;
             });
 
-            // ===== 自绘悬浮标签栏 =====
+            // ===== 自绘悬浮胶囊标签栏 =====
+            // 样式：不贴边、独立圆角胶囊、选中项带药丸高亮（当下流行的那种）。
             // 为什么自绘（这几点都在模拟器上试过）：
             //   · 全屏布局后，系统的 BarPosition.End 标签栏会贴到屏幕**物理**底部 —— 掉进手势条里；
             //   · 想只把栏往上抬：barHeight 只会让栏变高、连带把内容区往上挤（内容就没法从栏下滚过了）；
-            //   · 自绘这条：底部垫出手势条高度（bottomInset），毛玻璃一直铺到屏幕物理底部，
-            //     观感与系统栏一致，同时浮在内容之上 —— 卡片能从栏下滚过去并被虚化。
+            //   · 自绘这条：浮在内容之上、底部让开手势条，卡片能从它下面滚过去并被虚化。
             Row() {
               Column() {
                 this.tabItem(0, '仪表盘')
               }
-              .height(TAB_BAR_CONTENT_HEIGHT)
+              .height(TAB_ITEM_HEIGHT)
               .layoutWeight(1)
+              .borderRadius(TAB_ITEM_HEIGHT / 2)
+              .backgroundColor(this.currentIndex === 0 ? C_PRIMARY_SOFT : Color.Transparent)
               .onClick(() => this.switchTab(0));
 
               Column() {
                 this.tabItem(1, '网络')
               }
-              .height(TAB_BAR_CONTENT_HEIGHT)
+              .height(TAB_ITEM_HEIGHT)
               .layoutWeight(1)
+              .borderRadius(TAB_ITEM_HEIGHT / 2)
+              .backgroundColor(this.currentIndex === 1 ? C_PRIMARY_SOFT : Color.Transparent)
               .onClick(() => this.switchTab(1));
 
               Column() {
                 this.tabItem(2, '无线')
               }
-              .height(TAB_BAR_CONTENT_HEIGHT)
+              .height(TAB_ITEM_HEIGHT)
               .layoutWeight(1)
+              .borderRadius(TAB_ITEM_HEIGHT / 2)
+              .backgroundColor(this.currentIndex === 2 ? C_PRIMARY_SOFT : Color.Transparent)
               .onClick(() => this.switchTab(2));
 
               Column() {
                 this.tabItem(3, 'Clash')
               }
-              .height(TAB_BAR_CONTENT_HEIGHT)
+              .height(TAB_ITEM_HEIGHT)
               .layoutWeight(1)
+              .borderRadius(TAB_ITEM_HEIGHT / 2)
+              .backgroundColor(this.currentIndex === 3 ? C_PRIMARY_SOFT : Color.Transparent)
               .onClick(() => this.switchTab(3));
             }
-            .width('100%')
-            .padding({ top: SP_S, bottom: SP_S + this.bottomInset })
-            // 与顶栏同一套「液态玻璃」：透明底 + 纯模糊，边缘一条细线
+            .height(TAB_BAR_CONTENT_HEIGHT)
+            .padding({ left: 6, right: 6 })
+            // 两侧留边 + 底部让开手势条：所以它是一条「浮」在屏幕下沿上方的胶囊，而不是贴边通栏
+            .margin({ left: SP_M, right: SP_M, bottom: SP_S + this.bottomInset })
+            .borderRadius(TAB_BAR_CONTENT_HEIGHT / 2)
+            // 与顶栏同一套「液态玻璃」：透明底 + 纯模糊，整圈一条细线 + 轻微投影让它浮起来
             .backgroundColor(Color.Transparent)
             .backgroundEffect({ radius: 20, saturation: 1.4, brightness: 1.0, color: Color.Transparent })
-            .border({ width: { top: 1 }, color: C_DIVIDER });
+            .border({ width: 1, color: C_DIVIDER })
+            .shadow(ShadowStyle.OUTER_DEFAULT_SM)
+            .clip(true);
           }
           .layoutWeight(1)
           .width('100%');
