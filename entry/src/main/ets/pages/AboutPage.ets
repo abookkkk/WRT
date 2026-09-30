@@ -76,9 +76,16 @@ export struct AboutPage {
         }
       }
       if (newest.length > 0) {
-        this.savedPath = dir + '/' + newest;
-        this.statusText = '应用目录里已有下载好的更新包';
-        console.info('[About] 发现已下载的更新包: ' + newest);
+        // 只有「比当前版本新」才提示：用户装完新版再回到这页，不该还看到"已下载"
+        const vm: RegExpMatchArray | null = newest.match(/v?(\d+(?:\.\d+)+)/);
+        const fileVer: string = vm !== null ? vm[1] : '';
+        if (fileVer.length > 0 && UpdateChecker.compareVersion(fileVer, this.appVersion) > 0) {
+          this.savedPath = dir + '/' + newest;
+          this.statusText = '应用目录里已有下载好的更新包（' + fileVer + '）';
+          console.info('[About] 发现已下载的更新包: ' + newest);
+        } else {
+          console.info('[About] 目录里的 ' + newest + ' 不比当前版本新（' + this.appVersion + '），不提示');
+        }
       }
     } catch (e) {
       console.warn('[About] 检查已下载的更新包失败: ' + JSON.stringify(e));
