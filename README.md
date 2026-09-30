@@ -203,6 +203,10 @@ clashInfoRows() { Column() { Row() { Text('版本'); Text(this.version) } } }
 - [x] **深色模式** —— 顶部三态按钮（跟随系统 / 深色 / 浅色）循环切换并本地记住；颜色集中在 base/dark 两套 `color.json`，随系统深浅色自动切换（含系统栏图标配色）
 - [x] **多 SSID 管理 + 出口映射** —— 无线页改为以 `uci.get wireless` 为权威数据源，列出全部 wifi-iface（含射频禁用时配置里仍存在的那些），支持新增/删除/逐项编辑/绑定 network/单独启停；顶部新增出口映射表（SSID → network → 子网 → `SRC-IP-CIDR` 命中的策略组 → 当前节点），并对「未单独分流」「多 SSID 共用子网」做出告警
 - [x] **发射功率调整** —— `iwinfo.txpowerlist` 枚举档位（本机 0~23 dBm），写 `wireless.<radio>.txpower`；选「自动」则删除该项回到驱动默认
+- [x] **会话过期自动回登录页** —— 旧代码只读 `result[0]`，而会话过期时 rpcd 返回的是
+      `{"error":{"code":-32002,"message":"Access denied"}}`（**没有 result 字段**），异常被吞成一句"请求异常"。
+      现在两种失败形态分开处理：客户端识别 -32002 后回调上层，清本地 session → 回登录页并提示
+      「登录已过期，请重新登录」；回到前台时还会主动打一次轻量校验，切后台放超时就当场退回
 
 ### 待办
 
@@ -210,9 +214,6 @@ clashInfoRows() { Column() { Row() { Text('版本'); Text(this.version) } } }
       所以「一 WiFi 一住宅 IP」里的分流规则仍需在 LuCI / OpenClash 里配置，App 只能管 SSID 与显示映射。
       要真正落地这个方案，还需要：给每个 SSID 建**独立 network 子网**（uci 可做，下一步能做进 App）+ 在 OpenClash 加
       `SRC-IP-CIDR,<子网>,<策略组>` 规则（只能手工/LuCI）
-- [ ] **会话过期没有恢复路径**：路由器 session 300 秒超时后所有请求返回 `-32002`，
-      页面只会显示各种「获取失败 / 写入失败」；密码没有持久化、无法自动重登，
-      需要统一检测 `-32002` 并退回登录页
 - [ ] 暂未做路由器重启按钮（`system.reboot` 已可用）
 - [ ] `bundleName` 还是默认的 `com.example.myapplication`，正式发布前需要改
 - [ ] `OpenWrtClient` 用字符串拼接构造 JSON（`session.login`、`setWifiOption`）：密码 / SSID 里含 `"` 或 `\` 时请求体会坏掉，应改用 `JSON.stringify`
