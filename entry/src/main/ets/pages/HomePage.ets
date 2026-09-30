@@ -37,6 +37,8 @@ const HEADER_CONTENT_HEIGHT: number = 72;
 const TAB_BAR_CONTENT_HEIGHT: number = 60;
 /** 胶囊内单个 Tab 的高度：比胶囊矮一圈，选中时的药丸高亮才不会贴到胶囊边 */
 const TAB_ITEM_HEIGHT: number = TAB_BAR_CONTENT_HEIGHT - 12;
+/** 胶囊左右内边距（算"手指落在第几项"时要扣掉） */
+const CAPSULE_PAD: number = 6;
 
 @Component
 export struct HomePage {
@@ -59,6 +61,11 @@ export struct HomePage {
 
   /** 自绘悬浮标签栏要用它切页（系统标签栏已置 0 高） */
   private tabsController: TabsController = new TabsController();
+
+  /** 胶囊拖动状态：是否正在拖 / 手指在胶囊内的 x（vp）/ 胶囊实测宽度 —— 用来画跟随手指的柔光 */
+  @State private capsuleDragging: boolean = false;
+  @State private capsuleFingerX: number = 0;
+  @State private capsuleWidth: number = 0;
 
   /** 当前外观模式（跟随系统 / 浅色 / 深色）：按钮文案与图标都用它 */
   @State private appearance: AppearanceMode = 'system';
@@ -332,6 +339,21 @@ export struct HomePage {
               .borderRadius(TAB_ITEM_HEIGHT / 2)
               .backgroundColor(this.currentIndex === 3 ? C_PRIMARY_SOFT : Color.Transparent)
               .onClick(() => this.switchTab(3));
+
+              // 「光感」：跟着手指位置的一团柔光（绝对定位、不参与布局，松手即消失）
+              if (this.capsuleDragging) {
+                Column()
+                  .width(150)
+                  .height(TAB_ITEM_HEIGHT)
+                  .borderRadius(TAB_ITEM_HEIGHT / 2)
+                  .radialGradient({
+                    center: ['50%', '50%'],
+                    radius: 75,
+                    colors: [['#59FFFFFF', 0.0], ['#00FFFFFF', 1.0]]
+                  })
+                  .position({ x: this.capsuleFingerX - 75, y: CAPSULE_PAD })
+                  .hitTestBehavior(HitTestMode.None)
+              }
             }
             .height(TAB_BAR_CONTENT_HEIGHT)
             .padding({ left: 6, right: 6 })
@@ -344,16 +366,35 @@ export struct HomePage {
             .border({ width: 1, color: C_DIVIDER })
             .shadow(ShadowStyle.OUTER_DEFAULT_SM)
             .clip(true)
-            // 胶囊自己也要能滑：它是自绘的 Row，不在 Tabs 的手势区里，
-            // 所以单独接一个横向拖拽 —— 往左划下一页、往右划上一页（和页面区域滑动方向一致）
+            // 量一下胶囊宽度：把手指的绝对位置折算成"第几项"要用它
+            .onAreaChange((oldArea: Area, newArea: Area) => {
+              this.capsuleWidth = newArea.width as number;
+            })
+            // 华为商城那种胶囊：手指在胶囊上滑到哪一项，就切到哪一页（跨过中线即切），
+            // 柔光跟着手指走；松手时停在哪一项就是哪一页（来回滑会跟着回退）。
             .gesture(
-              PanGesture({ direction: PanDirection.Horizontal, distance: 24 })
-                .onActionEnd((event: GestureEvent) => {
-                  if (Math.abs(event.offsetX) < 40) {
+              PanGesture({ direction: PanDirection.Horizontal, distance: 6 })
+                .onActionStart(() => {
+                  this.capsuleDragging = true;
+                })
+                .onActionUpdate((event: GestureEvent) => {
+                  const x: number = event.fingerList.length > 0 ? event.fingerList[0].localX : -1;
+                  if (x < 0) {
                     return;
                   }
-                  const raw: number = event.offsetX < 0 ? this.currentIndex + 1 : this.currentIndex - 1;
-                  this.switchTab(raw < 0 ? 0 : (raw > 3 ? 3 : raw));
+                  this.capsuleFingerX = x;
+                  const inner: number = this.capsuleWidth - CAPSULE_PAD * 2;
+                  if (inner <= 0) {
+                    return;
+                  }
+                  const idx: number = Math.round((x - CAPSULE_PAD) / (inner / 4));
+                  this.switchTab(idx < 0 ? 0 : (idx > 3 ? 3 : idx));
+                })
+                .onActionEnd(() => {
+                  this.capsuleDragging = false;
+                })
+                .onActionCancel(() => {
+                  this.capsuleDragging = false;
                 })
             );
           }
