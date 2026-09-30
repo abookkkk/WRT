@@ -4,11 +4,26 @@
 
 // ===================== ubus JSON-RPC 通用结构 =====================
 
-/** ubus JSON-RPC 通用响应体 */
+/**
+ * ubus JSON-RPC 通用响应体。
+ *
+ * ⚠️ 两种失败形态必须分开处理：
+ *   1. `result[0] != 0` —— ubus 层的错误（如 code 4 参数错、6 权限拒）；
+ *   2. 走 `error` 字段 —— JSON-RPC 层错误，**会话过期就是这一种**
+ *      （`{"error":{"code":-32002,"message":"Access denied"}}`，此时 `result` 根本不存在）。
+ * 之前代码只读 `result[0]`，会话过期时抛异常被当成"请求异常"，既看不出是过期也没法统一处理。
+ */
 export interface UbusResponse {
   jsonrpc: string;
   id: number;
-  result: [number, Object];
+  result?: [number, Object];
+  error?: UbusRpcError;
+}
+
+/** JSON-RPC 层的错误对象 */
+export interface UbusRpcError {
+  code: number;
+  message: string;
 }
 
 /** ubus 调用返回的统一包装 */

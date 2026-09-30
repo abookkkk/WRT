@@ -45,6 +45,11 @@ import type {
 
 const ANONYMOUS_SESSION: string = '00000000000000000000000000000000';
 const DEFAULT_TIMEOUT: number = 10000;
+/**
+ * JSON-RPC 层"权限被拒"。rpcd 的 session 默认 300 秒空闲就失效，
+ * 之后任何业务调用都返回这个码（等价于匿名 session），据此判断"登录已过期"。
+ */
+const SESSION_EXPIRED_CODE: number = -32002;
 let requestIdCounter: number = 0;
 
 /** 统计节点类型用的小结构（ArkTS 里 Record 取不到 key 时类型是 undefined，不方便） */
@@ -75,6 +80,10 @@ export class OpenWrtClient {
   private loggedIn: boolean = false;
   private connectTimeout: number;
   private readTimeout: number;
+  /** 会话过期回调（由 Index 注册，用于统一退回登录页） */
+  private onSessionExpiredCb?: () => void;
+  /** 只通知一次：并发请求可能同时撞上过期，避免刷屏 */
+  private sessionExpiredFired: boolean = false;
 
   constructor(
     host: string,
@@ -102,6 +111,7 @@ export class OpenWrtClient {
       if (result.success && result.data) {
         this.sessionId = result.data.ubus_rpc_session;
         this.loggedIn = true;
+        this.sessionExpiredFired = false;
         return true;
       }
       return false;
@@ -123,6 +133,38 @@ export class OpenWrtClient {
     if (sessionId && sessionId.length === 32) {
       this.sessionId = sessionId;
       this.loggedIn = true;
+      this.sessionExpiredFired = false;
+    }
+  }
+
+  /**
+   * 注册"会话已过期"回调。
+   *
+   * 为什么需要：rpcd 的 session 300 秒空闲就失效，而密码不落地（安全考虑），
+   * App 无法自动重登。所以一旦某个调用拿到 -32002，就统一通知上层退回登录页，
+   * 而不是让用户在每个页面看到"获取失败 / 请求异常"却不知道为什么。
+   */
+  setOnSessionExpired(cb: () => void): void {
+    this.onSessionExpiredCb = cb;
+    this.sessionExpiredFired = false;
+  }
+
+  /** 当前是否处于"已登录且未被判定过期"的状态 */
+  isSessionAlive(): boolean {
+    return this.loggedIn && !this.sessionExpiredFired;
+  }
+
+  /** 触发一次会话过期通知（幂等） */
+  private fireSessionExpired(): void {
+    if (this.sessionExpiredFired || !this.loggedIn) {
+      return;
+    }
+    this.sessionExpiredFired = true;
+    // 本地标记为未登录：后续调用直接短路，不再去骚扰路由器
+    this.loggedIn = false;
+    console.warn('[OpenWrtClient] 会话已过期（-32002），通知上层退回登录页');
+    if (this.onSessionExpiredCb) {
+      this.onSessionExpiredCb();
     }
   }
 
@@ -1387,6 +1429,24 @@ export class OpenWrtClient {
 
       const text: string = response.data || '{}';
       const ubusResp: UbusResponse = JSON.parse(text);
+
+      // JSON-RPC 层错误：会话过期就是 -32002 Access denied（此时没有 result 字段）
+      if (ubusResp.error) {
+        const rpcCode: number = Number(ubusResp.error.code);
+        const rpcMsg: string = String(ubusResp.error.message || '');
+        console.error(`[OpenWrtClient] JSON-RPC 错误 ${obj}.${func} -> ${rpcCode} ${rpcMsg}`);
+        if (rpcCode === SESSION_EXPIRED_CODE) {
+          this.fireSessionExpired();
+          return { success: false, code: rpcCode, data: null, error: '登录已过期（Access denied），请重新登录' };
+        }
+        return { success: false, code: rpcCode, data: null, error: `RPC 错误 ${rpcCode}: ${rpcMsg}` };
+      }
+
+      // result 是定长元组 [code, data]，类型上保证长度，这里只需判断存在性
+      if (!ubusResp.result) {
+        return { success: false, code: -4, data: null, error: `返回体异常（既无 result 也无 error）: ${text.substring(0, 120)}` };
+      }
+
       const ubusCode: number = ubusResp.result[0] as number;
 
       if (ubusCode === 0) {
@@ -1456,6 +1516,7 @@ export class OpenWrtClient {
   }
 
   destroy(): void {
+    this.onSessionExpiredCb = undefined;
     try {
       this.httpClient.destroy();
     } catch (e) {
