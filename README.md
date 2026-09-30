@@ -202,6 +202,7 @@ clashInfoRows() { Column() { Row() { Text('版本'); Text(this.version) } } }
 - [x] **OpenClash 策略组与节点切换** —— 读 `/proxies` 列出 Selector / URLTest / Fallback 策略组及成员延迟，用 `PUT /proxies/{组名}` 切节点
 - [x] **深色模式** —— 顶部三态按钮（跟随系统 / 深色 / 浅色）循环切换并本地记住；颜色集中在 base/dark 两套 `color.json`，随系统深浅色自动切换（含系统栏图标配色）
 - [x] **多 SSID 管理 + 出口映射** —— 无线页改为以 `uci.get wireless` 为权威数据源，列出全部 wifi-iface（含射频禁用时配置里仍存在的那些），支持新增/删除/逐项编辑/绑定 network/单独启停；顶部新增出口映射表（SSID → network → 子网 → `SRC-IP-CIDR` 命中的策略组 → 当前节点），并对「未单独分流」「多 SSID 共用子网」做出告警
+- [x] **为 SSID 建独立子网** —— 无线页每个 SSID 可「建独立子网 / 退回 lan」：新建桥 + 静态接口 + DHCP，并把新网段加入 lan 防火墙区域；任一步失败自动回滚未提交的段
 - [x] **发射功率调整** —— `iwinfo.txpowerlist` 枚举档位（本机 0~23 dBm），写 `wireless.<radio>.txpower`；选「自动」则删除该项回到驱动默认
 - [x] **会话过期自动回登录页** —— 旧代码只读 `result[0]`，而会话过期时 rpcd 返回的是
       `{"error":{"code":-32002,"message":"Access denied"}}`（**没有 result 字段**），异常被吞成一句"请求异常"。
@@ -211,9 +212,8 @@ clashInfoRows() { Column() { Row() { Text('版本'); Text(this.version) } } }
 ### 待办
 
 - [ ] **App 无法代写「按源 IP 分流」的 Clash 规则**（实测 `file.write` 被 ACL 拒绝，连 `/tmp` 都不行；OpenClash 的自定义规则文件 `file.read` 也拒绝）。
-      所以「一 WiFi 一住宅 IP」里的分流规则仍需在 LuCI / OpenClash 里配置，App 只能管 SSID 与显示映射。
-      要真正落地这个方案，还需要：给每个 SSID 建**独立 network 子网**（uci 可做，下一步能做进 App）+ 在 OpenClash 加
-      `SRC-IP-CIDR,<子网>,<策略组>` 规则（只能手工/LuCI）
+      独立子网已经做进 App（无线页每个 SSID 都能建/删独立网段），但最后一步
+      `SRC-IP-CIDR,<子网>,<策略组>` 规则仍要在 LuCI / SSH 里配 —— 详见 `PLAN.md`
 - [ ] 暂未做路由器重启按钮（`system.reboot` 已可用）
 - [ ] `bundleName` 还是默认的 `com.example.myapplication`，正式发布前需要改
 - [ ] `OpenWrtClient` 用字符串拼接构造 JSON（`session.login`、`setWifiOption`）：密码 / SSID 里含 `"` 或 `\` 时请求体会坏掉，应改用 `JSON.stringify`
