@@ -246,7 +246,7 @@ export struct HomePage {
           // 「液态玻璃」：底色**完全透明**、不加任何色调，只对背后的内容做模糊（再轻微提一点饱和度），
           // 让玻璃有存在感但不遮挡内容。要更糊就把 radius 调大
           .backgroundColor(Color.Transparent)
-          .backgroundEffect({ radius: 40, saturation: 1.4, brightness: 1.0, color: Color.Transparent })
+          .backgroundEffect({ radius: 20, saturation: 1.4, brightness: 1.0, color: Color.Transparent })
           .border({ width: { bottom: 1 }, color: C_DIVIDER })
           // 脱离布局流、绝对定位到屏幕顶端：Tabs 因此能占满整屏，卡片可以从顶栏后面滚过去被虚化
           .position({ x: 0, y: 0 })
@@ -324,7 +324,7 @@ export struct HomePage {
             .padding({ top: SP_S, bottom: SP_S + this.bottomInset })
             // 与顶栏同一套「液态玻璃」：透明底 + 纯模糊，边缘一条细线
             .backgroundColor(Color.Transparent)
-            .backgroundEffect({ radius: 40, saturation: 1.4, brightness: 1.0, color: Color.Transparent })
+            .backgroundEffect({ radius: 20, saturation: 1.4, brightness: 1.0, color: Color.Transparent })
             .border({ width: { top: 1 }, color: C_DIVIDER });
           }
           .layoutWeight(1)
