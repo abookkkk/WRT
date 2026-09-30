@@ -389,6 +389,8 @@ export struct DashboardPage {
       const boardResult = await this.client.getSystemBoard();
       const infoResult = await this.client.getSystemInfo();
       const deviceCount = await this.client.getOnlineDeviceCount();
+      // 负载均值是"每核"口径，换算百分比要知道几核（file.list /sys/devices/system/cpu 数出来的）
+      const cpuCores: number = await this.client.getCpuCoreCount();
 
       if (boardResult.success && boardResult.data) {
         const board: SystemBoard = boardResult.data;
@@ -405,9 +407,10 @@ export struct DashboardPage {
         const info: SystemInfo = infoResult.data;
         this.uptime = this.formatUptime(info.uptime);
         const load: number[] = info.load || [];
-        this.cpuLoad1 = load.length > 0 ? this.normalizeLoad(load[0]).toFixed(2) : '--';
-        this.cpuLoad5 = load.length > 1 ? this.normalizeLoad(load[1]).toFixed(2) : '--';
-        this.cpuLoad15 = load.length > 2 ? this.normalizeLoad(load[2]).toFixed(2) : '--';
+        // 负载均值 → 百分比：load / 核数 × 100（四舍五入到整数）
+        this.cpuLoad1 = load.length > 0 ? (Math.round(this.normalizeLoad(load[0]) / cpuCores * 100) + '%') : '--';
+        this.cpuLoad5 = load.length > 1 ? (Math.round(this.normalizeLoad(load[1]) / cpuCores * 100) + '%') : '--';
+        this.cpuLoad15 = load.length > 2 ? (Math.round(this.normalizeLoad(load[2]) / cpuCores * 100) + '%') : '--';
 
         const mem = info.memory;
         const used: number = mem.total - mem.free - mem.buffered - (mem.cached || 0);

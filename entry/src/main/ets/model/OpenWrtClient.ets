@@ -1329,6 +1329,42 @@ export class OpenWrtClient {
     );
   }
 
+  /**
+   * CPU 核数：把 1/5/15 分钟负载均值换算成百分比要用它（load / cores）。
+   *
+   * 为什么绕这一圈：`system.info` 与 `system.board` 都不带核数，
+   * 而 `file.read /proc/cpuinfo` 被 ACL 直接拒掉（ubus code 6）。
+   * 实测可行的是 `file.list /sys/devices/system/cpu`（code 0），数一下 cpuN 条目就行。
+   * 拿不到就回退 2（这类家用路由基本都是双核），保证界面不空着。
+   */
+  async getCpuCoreCount(): Promise<number> {
+    try {
+      const r: UbusResult<CpuListResult> = await this.ubusCallAuth<CpuListResult>(
+        'file', 'list', '{"path":"/sys/devices/system/cpu"}'
+      );
+      if (r.success && r.data !== null && r.data.entries !== undefined) {
+        const entries: CpuListEntry[] = r.data.entries;
+        let n: number = 0;
+        for (let i = 0; i < entries.length; i++) {
+          const name: string = entries[i].name;
+          if (name.length > 3 && name.indexOf('cpu') === 0) {
+            const idx: number = parseInt(name.substring(3));
+            if (!isNaN(idx)) {
+              n = n + 1;
+            }
+          }
+        }
+        if (n > 0) {
+          console.info('[OpenWrtClient] CPU 核数 = ' + String(n));
+          return n;
+        }
+      }
+    } catch (e) {
+      console.warn('[OpenWrtClient] 数 CPU 核数失败: ' + JSON.stringify(e));
+    }
+    return 2;
+  }
+
   async getSystemBoard(): Promise<UbusResult<SystemBoard>> {
     return this.ubusCallAuth<SystemBoard>('system', 'board', json('{}'));
   }
@@ -1886,4 +1922,14 @@ export class OpenWrtClient {
     this.sessionId = '';
     this.loggedIn = false;
   }
+}
+
+/** file.list 返回的一个目录项（只取名字） */
+interface CpuListEntry {
+  name: string;
+}
+
+/** file.list /sys/devices/system/cpu 的返回体 */
+interface CpuListResult {
+  entries: CpuListEntry[];
 }
