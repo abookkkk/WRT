@@ -88,6 +88,8 @@ class RadioItem {
   htModes: string[] = [];
   txPowers: number[] = [];
   aps: ApItem[] = [];
+  /** 射频关闭时是否手动展开下面的配置（默认收起，避免整页杂乱） */
+  expanded: boolean = false;
 }
 
 /** 出口映射表的一行 */
@@ -335,6 +337,27 @@ export struct WifiPage {
       }
       .width('100%').margin({ bottom: 12 });
 
+      // --- 射频关闭时收起下面的配置，避免整页看着杂乱；要改就点「展开」 ---
+      if (!radio.enabled) {
+        Row() {
+          Text('该射频已关闭，已收起信道 / 频宽 / 发射功率与 ' + String(radio.aps.length) + ' 个 SSID 的配置')
+            .fontSize(11).fontColor(C_TEXT_3).layoutWeight(1).lineHeight(16);
+          Button(radio.expanded ? '收起' : '展开')
+            .fontSize(12).height(28).type(ButtonType.Capsule)
+            .backgroundColor(C_FILL)
+            .fontColor(C_PRIMARY)
+            .enabled(!this.busy)
+            .onClick(() => {
+              radio.expanded = !radio.expanded;
+              this.dataVersion = this.dataVersion + 1;
+            });
+        }
+        .width('100%').alignItems(VerticalAlign.Center);
+      }
+
+      // 射频开着、或关闭后手动展开时，才铺下面的配置
+      if (radio.enabled || radio.expanded) {
+
       // --- 运行时状态 ---
       this.infoLine('当前信道', radio.liveChannel > 0 ? String(radio.liveChannel) : '--');
       this.infoLine('发射功率', radio.txpowerDbm > 0 ? (radio.txpowerDbm + ' dBm') : '--');
@@ -429,6 +452,7 @@ export struct WifiPage {
         .margin({ top: 12 })
         .enabled(!this.busy && !this.scanning)
         .onClick(() => this.doScan(radio));
+      }
     }
     .width('100%').padding(16)
     .backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM)
