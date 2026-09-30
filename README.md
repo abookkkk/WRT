@@ -107,7 +107,7 @@ HarmonyOS **默认禁止明文 HTTP**。想连局域网里的 `http://192.168.x.
 |---|---|
 | **沉浸式布局** | `expandSafeArea` 让渐变背景延伸到状态栏 / 导航栏之后（只扩展背景，内容仍留在安全区内） |
 | **系统符号图标** | `SymbolGlyph($r('sys.symbol.xxx'))` —— 标签栏与表单图标全用系统符号：`house` / `rectangle_stack` / `wifi` / `person` / `bolt` / `lock` / `lock_fill` / `eye` / `eye_slash` |
-| **透明毛玻璃导航栏** | 顶部标题栏与底部标签栏都是「半透明底色（调色板 `c_bar`，35% 不透明）+ `BlurStyle.COMPONENT_ULTRA_THICK`」：内容滚到栏下会被虚化、文字仍清晰；系统状态栏 / 导航栏也显式设成透明（`statusBarColor`/`navigationBarColor` = `#00000000`），渐变背景能透上去；标签栏用 `Tabs.barOverlap(true)` **浮在内容之上**，内容能一直铺到屏幕底部并从栏下滚过（被毛玻璃虚化），各页内容底部留 `TAB_BAR_SPACE`（74vp）的余量，最后一行不会被栏盖住 |
+| **全屏沉浸式 + 透明毛玻璃导航栏** | 窗口 `setWindowLayoutFullScreen(true)`，页面从**屏幕物理顶端**开始铺：卡片能滚到状态栏后面被虚化（华为图库那种观感）。顶栏 `.position({x:0,y:0})`+`zIndex` 悬浮、毛玻璃盖住状态栏那条而文字落在状态栏下方；底栏**自绘**（`barHeight(0)` + 自己算高度的 Row，底部垫出手势条高度，毛玻璃一直铺到物理底部）。各页用 `AppStorage` 的 `safeTop`/`safeBottom` 自己留避让 |
 | **渐变背景** | `linearGradient` 浅蓝 → 灰白 |
 | **玻璃拟态卡片** | 半透明白 `#F2FFFFFF` + 圆角 20 + `ShadowStyle.OUTER_DEFAULT_SM` |
 | **登录页** | 深蓝渐变头部 + 圆形半透明徽章 + 玻璃表单卡片；键盘「前往」键通过 `onSubmit` 直接提交登录 |
@@ -249,8 +249,13 @@ clashInfoRows() { Column() { Row() { Text('版本'); Text(this.version) } } }
 - [x] **上下两根导航栏改成透明毛玻璃** —— 顶部标题栏加 `c_bar`（35% 不透明）+ `BlurStyle.COMPONENT_ULTRA_THICK`，与底部标签栏同一套观感：
       内容滚到栏下被虚化（实测滚动截图里卡片文字从栏后透出来、被模糊），系统状态栏 / 导航栏也显式设成透明让渐变透上去。
       顺手修掉一个回归：顶栏加了 ⓘ 之后三个按钮把标题挤到换行（「OpenWrt 管 / 理」），标题字号 26 → 22 并限制单行。
-      随后又做成**真·悬浮**：`Tabs.barOverlap(true)` 让标签栏叠在内容之上，内容能铺到屏幕底部、从栏下滚过去并被虚化
-      （实测滚动截图里卡片从栏后透出来）；代价是各页要自己留底部余量，所以加了令牌 `TAB_BAR_SPACE`(74vp)，四个 Tab 页的内容 Column 都用它做 `padding.bottom`
+      随后又做成**真·悬浮**：内容能铺到屏幕底部、从栏下滚过去并被虚化；代价是各页要自己留底部余量，所以加了令牌 `TAB_BAR_SPACE`，四个 Tab 页的内容 Column 都用它做 `padding.bottom`
+- [x] **改成真·全屏沉浸式（华为图库那种）** —— 上一步只做到"栏半透明"，内容仍被安全区挡在最上面之外，看着没效果 ✗。
+      现在窗口 `setWindowLayoutFullScreen(true)`，页面从屏幕物理顶端铺起：顶栏 `.position`+`zIndex` 悬浮、
+      `padding.top = topInset + SP_S`（毛玻璃盖住状态栏那条，文字仍在状态栏下方），底栏改**自绘**悬浮栏
+      （系统 `BarPosition.End` 栏在全屏后会掉进手势条里，`barHeight` 又会挤压内容区）；
+      各页避让走 `AppStorage` 的 `safeTop`/`safeBottom`（`@StorageProp` 读，运行时随避让区变化自动重排）。
+      实测：滚动中卡片文字从状态栏后面透出并被虚化 ✓；二级页标题栏也垫了状态栏高度 ✓；切 Tab / 返回都正常 ✓
 
 ### 待办
 

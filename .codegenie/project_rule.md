@@ -580,14 +580,25 @@ private onPullRefresh(): void {
 - 下载完**必须校验**：实测把 404 的 9 字节错误正文当成了下载成功（`requestInStream` 的状态码回调常常在
   `dataEnd` **之后**才来）。现在会等 400ms 拿状态码，并比对预期字节数。
 
-### 13. 让内容从底部标签栏下面滚过：`Tabs.barOverlap(true)`
+### 13. 全屏沉浸式：内容能滚到状态栏 / 手势条后面
 
-想做出鸿蒙那种通透观感（卡片从标签栏下滚过并被虚化），关键就一行 **`Tabs.barOverlap(true)`** ——
-标签栏叠在内容之上，Tabs 的内容区因此铺到屏幕底部。⚠️ 代价是**各页要自己留底部余量**，
-不然最后一行会被栏盖住：`common/Theme.ets` 里已加令牌 **`TAB_BAR_SPACE`（74vp = 栏高 62 + 余量）**，
-四个 Tab 页（仪表盘 / 网络 / 无线 / Clash）的内容 Column 都用它做 `padding.bottom`。
-标签栏的底色与模糊仍由 `barBackgroundColor(C_BAR)` + `barBackgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)` 控制
-（`c_bar` 是 35% 不透明的半透明色，两套调色板各一份）。
+要做出华为图库那种「内容一直铺到屏幕物理顶端、从状态栏后面滚过去」的观感，三件事缺一不可
+（每一步都在模拟器上逐像素验证过）：
+
+1. **窗口全屏布局** —— `ThemeSettings.refreshSystemBar` 里 `win.setWindowLayoutFullScreen(true)`：
+   页面从此从屏幕物理顶端开始铺（含状态栏 / 手势条区域），系统栏本身也已设成透明。
+2. **两根栏都要脱离布局流、悬浮在内容之上**：
+   - **顶栏**：`.position({ x: 0, y: 0 })` + `.zIndex(2)`，并且 `padding.top = topInset + SP_S`
+     —— 毛玻璃从屏幕物理顶端铺下来，栏里的文字/按钮仍落在状态栏下方（不和时钟、电量打架）。
+   - **底栏**：⚠️ 全屏后系统的 `BarPosition.End` 标签栏会**掉进手势条区域**，而 `barHeight` 只会让栏变高、
+     连带把内容区往上挤（内容就又滚不到栏下面）。所以改成**自绘**：`Tabs.barHeight(0)` +
+     一条自己算高度的 `Row`（复用 `tabItem()` builder，切页走 `TabsController.changeIndex()`），
+     底部 `padding.bottom = SP_S + bottomInset` 把毛玻璃一直铺到屏幕物理底部。
+     （曾经的 `Tabs.barOverlap(true)` 方案只能解决"越过安全区底边"，全屏后不够用。）
+3. **各页自己留避让** —— HomePage 量好避让区后写进 `AppStorage` 的 `safeTop` / `safeBottom`
+   （= `topInset + HEADER_CONTENT_HEIGHT` / `bottomInset + TAB_BAR_CONTENT_HEIGHT`），
+   各页用 `@StorageProp` 读（值变化会自动重排），当作内容 Column 的上下 padding。
+   ⚠️ **不要给 Tabs 加 padding** —— 那会挤压内容区，内容就又滚不到栏下面了。
 
 ---
 

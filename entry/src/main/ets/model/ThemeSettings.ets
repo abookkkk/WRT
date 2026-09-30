@@ -99,6 +99,10 @@ export class ThemeSettings {
   static refreshSystemBar(context: common.Context, mode: AppearanceMode): void {
     const contentColor: string = ThemeSettings.isDark(context, mode) ? '#E5FFFFFF' : '#E5000000';
     window.getLastWindow(context).then((win: window.Window) => {
+      // 全屏布局：页面内容从屏幕物理顶端开始铺（含状态栏 / 手势条区域），
+      // 这样卡片才能滚到状态栏后面 —— 华为图库那种观感。避让交给各页自己留白
+      //（HomePage 量好避让区后写进 AppStorage 的 safeTop / safeBottom）。
+      win.setWindowLayoutFullScreen(true);
       win.setWindowSystemBarProperties({
         // 系统栏本身也要透明：内容（渐变背景）才能透上去，这才是沉浸式
         statusBarColor: '#00000000',

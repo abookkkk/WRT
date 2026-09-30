@@ -38,7 +38,9 @@ const MODE_LABELS: string[] = ['Rule 规则模式', 'Global 全局模式', 'Dire
 
 @Component
 export struct OpenClashPage {
-  private client!: OpenWrtClient;
+  /** 悬浮顶栏 / 标签栏的避让：HomePage 量好安全区后写进 AppStorage，值变化时这里会自动重排 */
+  @StorageProp('safeTop') safeTop: number = 100;
+  @StorageProp('safeBottom') safeBottom: number = TAB_BAR_SPACE + 16;  private client!: OpenWrtClient;
   /** Clash 外部控制 API 地址，按 路由器IP + uci 里的 cn_port 拼出 */
   private clashApiBase: string = '';
   /** 外部控制密钥，来自 uci 的 dashboard_password，不带一律 401 */
@@ -99,7 +101,7 @@ export struct OpenClashPage {
             this.helpCard();
           }
           .width('100%')
-          .padding({ left: SP_L, right: SP_L, top: SP_L, bottom: TAB_BAR_SPACE })
+          .padding({ left: SP_L, right: SP_L, top: this.safeTop, bottom: this.safeBottom })
         }
         .width('100%')
         .height('100%')

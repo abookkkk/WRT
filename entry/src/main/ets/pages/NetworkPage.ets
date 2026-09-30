@@ -34,7 +34,9 @@ class RateSample {
 
 @Component
 export struct NetworkPage {
-  private client!: OpenWrtClient;
+  /** 悬浮顶栏 / 标签栏的避让：HomePage 量好安全区后写进 AppStorage，值变化时这里会自动重排 */
+  @StorageProp('safeTop') safeTop: number = 100;
+  @StorageProp('safeBottom') safeBottom: number = TAB_BAR_SPACE + 16;  private client!: OpenWrtClient;
 
   @State private interfaces: NetworkInterface[] = [];
   @State private isLoading: boolean = true;
@@ -77,7 +79,7 @@ export struct NetworkPage {
               });
             }
             .width('100%')
-            .padding({ left: SP_L, right: SP_L, top: SP_L, bottom: TAB_BAR_SPACE })
+            .padding({ left: SP_L, right: SP_L, top: this.safeTop, bottom: this.safeBottom })
           }
           .width('100%')
           .height('100%')

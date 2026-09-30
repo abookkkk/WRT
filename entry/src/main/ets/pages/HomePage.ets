@@ -31,6 +31,11 @@ import {
   F_HERO, F_TITLE, F_SECTION, F_CAPTION, F_TINY, ICON_L, ICON_M, SP_XS, SP_S, SP_M, SP_L, colorString
 } from '../common/Theme';
 
+/** 顶栏内容高度（标题那一行 + 上下内边距，不含状态栏高度）：页面顶部留白按它算 */
+const HEADER_CONTENT_HEIGHT: number = 72;
+/** 底部标签栏内容高度（不含手势条高度） */
+const TAB_BAR_CONTENT_HEIGHT: number = 62;
+
 @Component
 export struct HomePage {
   private client!: OpenWrtClient;
@@ -47,6 +52,12 @@ export struct HomePage {
    */
   @State private bottomInset: number = 0;
 
+  /** 顶部安全区（状态栏）高度，单位 vp：顶栏自己垫这么高，内容才能从它后面滚过去 */
+  @State private topInset: number = 0;
+
+  /** 自绘悬浮标签栏要用它切页（系统标签栏已置 0 高） */
+  private tabsController: TabsController = new TabsController();
+
   /** 当前外观模式（跟随系统 / 浅色 / 深色）：按钮文案与图标都用它 */
   @State private appearance: AppearanceMode = 'system';
 
@@ -54,7 +65,7 @@ export struct HomePage {
   private pathStack: NavPathStack = new NavPathStack();
 
   aboutToAppear(): void {
-    this.measureBottomInset();
+    this.measureInsets();
     // 启动时 EntryAbility 已经应用过外观，这里读一次只为让按钮显示正确的状态
     try {
       const ctx = getContext(this) as common.UIAbilityContext;
@@ -95,20 +106,38 @@ export struct HomePage {
     promptAction.showToast({ message: '外观已切换为：' + this.appearanceLabel(), duration: 1500 });
   }
 
-  /** 读窗口底部避让区（取系统区与手势条区的较大值），换算成 vp */
-  private async measureBottomInset(): Promise<void> {
+  /**
+   * 读窗口避让区（状态栏 / 手势条），换算成 vp。
+   *
+   * 全屏布局（ThemeSettings 里 setWindowLayoutFullScreen(true)）之后，页面从屏幕物理顶端开始铺，
+   * 两根悬浮栏的避让就得**页面自己留白**：算好写进 AppStorage，
+   * 各页用 @StorageProp('safeTop' / 'safeBottom') 读（值变化时页面会自动重排）。
+   */
+  private async measureInsets(): Promise<void> {
     try {
       const ctx = getContext(this) as common.UIAbilityContext;
       const win: window.Window = await window.getLastWindow(ctx);
       const systemArea: window.AvoidArea = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
       const indicatorArea: window.AvoidArea = win.getWindowAvoidArea(window.AvoidAreaType.TYPE_NAVIGATION_INDICATOR);
-      const px: number = Math.max(systemArea.bottomRect.height, indicatorArea.bottomRect.height);
-      this.bottomInset = px2vp(px);
-      console.info(`[HomePage] 底部安全区 ${px}px = ${this.bottomInset}vp`);
+      const bottomPx: number = Math.max(systemArea.bottomRect.height, indicatorArea.bottomRect.height);
+      this.topInset = px2vp(systemArea.topRect.height);
+      this.bottomInset = px2vp(bottomPx);
+      AppStorage.setOrCreate('safeTop', this.topInset + HEADER_CONTENT_HEIGHT);
+      AppStorage.setOrCreate('safeBottom', this.bottomInset + TAB_BAR_CONTENT_HEIGHT);
+      console.info(`[HomePage] 安全区：状态栏 ${this.topInset}vp / 手势条 ${this.bottomInset}vp`);
     } catch (e) {
-      // 拿不到就退回 0：标签栏少铺一条，功能不受影响
-      console.warn('[HomePage] 读取底部安全区失败: ' + JSON.stringify(e));
+      // 拿不到就退回 0：两根栏少铺一点，功能不受影响
+      console.warn('[HomePage] 读取安全区失败: ' + JSON.stringify(e));
     }
+  }
+
+  /** 切 Tab（自绘悬浮标签栏用） */
+  private switchTab(index: number): void {
+    if (index === this.currentIndex) {
+      return;
+    }
+    this.currentIndex = index;
+    this.tabsController.changeIndex(index);
   }
 
   build() {
@@ -203,69 +232,94 @@ export struct HomePage {
               .onClick(() => this.handleLogout());
           }
           .width('100%')
-          .padding({ left: SP_L, right: SP_L, top: SP_S, bottom: SP_S })
+          // 顶部垫出状态栏高度：栏的毛玻璃因此从屏幕物理顶端开始铺（盖住状态栏那条），
+          // 但栏里的文字/按钮仍落在状态栏下方，不会和时钟、电量图标打架
+          .padding({ left: SP_L, right: SP_L, top: this.topInset + SP_S, bottom: SP_S })
           .alignItems(VerticalAlign.Center)
-          // 顶栏做成「透明毛玻璃」：底色是调色板里的 c_bar（35% 不透明），
-          // 再叠一层超厚模糊 —— 内容滚到栏下时被虚化，文字照样看得清（鸿蒙原生那种观感）
           .backgroundColor(C_BAR)
-          .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK);
+          .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
+          // 脱离布局流、绝对定位到屏幕顶端：Tabs 因此能占满整屏，卡片可以从顶栏后面滚过去被虚化
+          .position({ x: 0, y: 0 })
+          .zIndex(2);
 
-          // ===== Tab 内容 =====
-          Tabs({ barPosition: BarPosition.End }) {
-            TabContent() {
-              DashboardPage({ client: this.client, onOpenDevices: () => this.openDevices() })
-            }
-            .tabBar(this.tabItem(0, '仪表盘'))
+          // ===== Tab 内容 + 自绘悬浮标签栏 =====
+          Stack({ alignContent: Alignment.Bottom }) {
+            Tabs({ barPosition: BarPosition.End, index: this.currentIndex, controller: this.tabsController }) {
+              TabContent() {
+                DashboardPage({ client: this.client, onOpenDevices: () => this.openDevices() })
+              }
+              .tabBar(this.tabItem(0, '仪表盘'))
 
-            TabContent() {
-              NetworkPage({ client: this.client })
-            }
-            .tabBar(this.tabItem(1, '网络'))
+              TabContent() {
+                NetworkPage({ client: this.client })
+              }
+              .tabBar(this.tabItem(1, '网络'))
 
-            TabContent() {
-              WifiPage({ client: this.client })
-            }
-            .tabBar(this.tabItem(2, '无线'))
+              TabContent() {
+                WifiPage({ client: this.client })
+              }
+              .tabBar(this.tabItem(2, '无线'))
 
-            TabContent() {
-              OpenClashPage({ client: this.client })
+              TabContent() {
+                OpenClashPage({ client: this.client })
+              }
+              .tabBar(this.tabItem(3, 'Clash'))
             }
-            .tabBar(this.tabItem(3, 'Clash'))
+            .width('100%')
+            .height('100%')
+            // 系统标签栏置 0 高：栏改由下面自绘那条担任（它才能浮在内容之上 + 铺到屏幕物理底部）
+            .barHeight(0)
+            .barMode(BarMode.Fixed)
+            .animationDuration(280)
+            .onChange((index: number) => {
+              this.currentIndex = index;
+            });
+
+            // ===== 自绘悬浮标签栏 =====
+            // 为什么自绘（这几点都在模拟器上试过）：
+            //   · 全屏布局后，系统的 BarPosition.End 标签栏会贴到屏幕**物理**底部 —— 掉进手势条里；
+            //   · 想只把栏往上抬：barHeight 只会让栏变高、连带把内容区往上挤（内容就没法从栏下滚过了）；
+            //   · 自绘这条：底部垫出手势条高度（bottomInset），毛玻璃一直铺到屏幕物理底部，
+            //     观感与系统栏一致，同时浮在内容之上 —— 卡片能从栏下滚过去并被虚化。
+            Row() {
+              Column() {
+                this.tabItem(0, '仪表盘')
+              }
+              .height(TAB_BAR_CONTENT_HEIGHT)
+              .layoutWeight(1)
+              .onClick(() => this.switchTab(0));
+
+              Column() {
+                this.tabItem(1, '网络')
+              }
+              .height(TAB_BAR_CONTENT_HEIGHT)
+              .layoutWeight(1)
+              .onClick(() => this.switchTab(1));
+
+              Column() {
+                this.tabItem(2, '无线')
+              }
+              .height(TAB_BAR_CONTENT_HEIGHT)
+              .layoutWeight(1)
+              .onClick(() => this.switchTab(2));
+
+              Column() {
+                this.tabItem(3, 'Clash')
+              }
+              .height(TAB_BAR_CONTENT_HEIGHT)
+              .layoutWeight(1)
+              .onClick(() => this.switchTab(3));
+            }
+            .width('100%')
+            .padding({ top: SP_S, bottom: SP_S + this.bottomInset })
+            .backgroundColor(C_BAR)
+            .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK);
           }
           .layoutWeight(1)
-          .width('100%')
-          .barHeight(62)
-          // 让标签栏"浮"在内容之上：内容因此能一直铺到屏幕底部并从栏下滚过去，栏的毛玻璃会把它们虚化
-          .barOverlap(true)
-          .barMode(BarMode.Fixed)
-          .barBackgroundColor(C_BAR)
-          .barBackgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
-          .animationDuration(280)
-          .onChange((index: number) => {
-            this.currentIndex = index;
-          });
+          .width('100%');
         }
         .width('100%')
         .height('100%')
-
-        // ===== 标签栏下方的安全区补白 =====
-        // 标签栏只会铺到安全区边界，屏幕最底部那条手势条区域露出的是页面渐变底色，
-        // 看着像界面没做完。这里补一条与标签栏同色、同样模糊的色带，把标签栏"接"到屏幕物理底部。
-        //
-        // 为什么用绝对定位（下面这些都在模拟器上逐像素比对过）：
-        //   · 给 Tabs 加 barHeight + expandSafeArea → 无效：标签栏始终锚在安全区边界，
-        //     expandSafeArea 只让 Tabs 盒子变大，标签栏反而向上多吃 28vp 内容区，底下灰带照旧；
-        //   · 让内容列 expandSafeArea 再把补白条当子元素 → 同样无效：expandSafeArea 只让
-        //     **叶子节点**的绘制区域外扩（渐变背景能吃到底部就是这个原因），容器里的子元素不会被挪进安全区。
-        //   · 现在这样：补白条脱离布局流，绝对定位到内容框下沿（y='100%' 即安全区底边）再往下铺 bottomInset，
-        //     正好落在手势条区域，且不会挤压 Tabs、不影响标签栏位置。
-        Column()
-          .width('100%')
-          .height(this.bottomInset)
-          .backgroundColor(C_BAR)
-          .backgroundBlurStyle(BlurStyle.COMPONENT_ULTRA_THICK)
-          .position({ x: 0, y: '100%' })
-          .hitTestBehavior(HitTestMode.None)
       }
       .width('100%')
       .height('100%')
@@ -340,7 +394,8 @@ export struct HomePage {
         .margin({ left: SP_M });
     }
     .width('100%')
-    .padding({ left: SP_L, right: SP_L, top: SP_S, bottom: SP_S })
+    // 全屏布局后二级页也从屏幕物理顶端开始铺，标题栏自己垫出状态栏高度
+    .padding({ left: SP_L, right: SP_L, top: this.topInset + SP_S, bottom: SP_S })
     .alignItems(VerticalAlign.Center);
   }
 

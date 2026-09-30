@@ -101,7 +101,9 @@ class ScanItem {
 
 @Component
 export struct WifiPage {
-  private client!: OpenWrtClient;
+  /** 悬浮顶栏 / 标签栏的避让：HomePage 量好安全区后写进 AppStorage，值变化时这里会自动重排 */
+  @StorageProp('safeTop') safeTop: number = 100;
+  @StorageProp('safeBottom') safeBottom: number = TAB_BAR_SPACE + 16;  private client!: OpenWrtClient;
 
   @State private radios: RadioItem[] = [];
   @State private networkNames: string[] = [];
@@ -195,7 +197,7 @@ export struct WifiPage {
               .width('100%').padding(16)
               .backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM);
             }
-            .width('100%').padding({ left: 16, right: 16, top: 16, bottom: TAB_BAR_SPACE })
+            .width('100%').padding({ left: 16, right: 16, top: this.safeTop, bottom: this.safeBottom })
           }
           .width('100%').height('100%')
           .edgeEffect(EdgeEffect.Spring)

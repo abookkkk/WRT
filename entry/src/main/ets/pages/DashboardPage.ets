@@ -40,7 +40,9 @@ class RatePoint {
 
 @Component
 export struct DashboardPage {
-  private client!: OpenWrtClient;
+  /** 悬浮顶栏 / 标签栏的避让：HomePage 量好安全区后写进 AppStorage，值变化时这里会自动重排 */
+  @StorageProp('safeTop') safeTop: number = 100;
+  @StorageProp('safeBottom') safeBottom: number = TAB_BAR_SPACE + 16;  private client!: OpenWrtClient;
   /** 点「在线设备」卡片 → 打开二级页面（由 HomePage 传入） */
   onOpenDevices: () => void = () => {};
 
@@ -244,7 +246,7 @@ export struct DashboardPage {
               .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 })
               .onClick(() => this.onOpenDevices());
             }
-            .width('100%').padding({ left: 16, right: 16, top: 16, bottom: TAB_BAR_SPACE })
+            .width('100%').padding({ left: 16, right: 16, top: this.safeTop, bottom: this.safeBottom })
           }
           .width('100%').height('100%')
           .scrollable(ScrollDirection.Vertical)
