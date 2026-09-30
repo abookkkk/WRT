@@ -161,13 +161,15 @@ export struct HomePage {
           // ===== 顶部标题栏 =====
           Row() {
             Column() {
-              // 顶栏塞了 ⓘ / 外观 / 退出 三个按钮后，26 号的标题会被挤到换行 —— 降到 22 号刚好一行
+              // 顶栏塞了 ⓘ / 外观 / 退出 三个按钮，空间紧（外观按钮最长会显示「跟随系统」）。
+              // 用自适应字号：放得下就 22 号，放不下自动缩到最小 16 号 —— 不会换行、也不会被省略号截掉
               Text('OpenWrt 管理')
-                .fontSize(F_TITLE)
+                .maxFontSize(F_TITLE)
+                .minFontSize(16)
+                .heightAdaptivePolicy(TextHeightAdaptivePolicy.MIN_FONT_SIZE_FIRST)
                 .fontWeight(FontWeight.Bold)
                 .fontColor(C_TEXT_1)
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis });
+                .maxLines(1);
               Text('AX3000T · Filogic 820')
                 .fontSize(F_CAPTION)
                 .fontColor(C_TEXT_3)
