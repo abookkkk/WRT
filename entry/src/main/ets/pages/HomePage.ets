@@ -66,6 +66,11 @@ export struct HomePage {
   @State private capsuleDragging: boolean = false;
   @State private capsuleFingerX: number = 0;
   @State private capsuleWidth: number = 0;
+  /**
+   * 拖动过程中手指当前落在哪一项：**松手时才用它切页**。
+   * 拖动中就切的话，手指来回滑时页面会反复切换（每次都带动画），观感很跳。
+   */
+  private capsuleTargetIndex: number = 0;
 
   /** 当前外观模式（跟随系统 / 浅色 / 深色）：按钮文案与图标都用它 */
   @State private appearance: AppearanceMode = 'system';
@@ -376,8 +381,11 @@ export struct HomePage {
               PanGesture({ direction: PanDirection.Horizontal, distance: 6 })
                 .onActionStart(() => {
                   this.capsuleDragging = true;
+                  this.capsuleTargetIndex = this.currentIndex;
                 })
                 .onActionUpdate((event: GestureEvent) => {
+                  // 拖动过程中只更新"柔光位置 + 目标项"，**不切页**：
+                  // 手指来回滑时页面反复切会很跳，等松手再切
                   const x: number = event.fingerList.length > 0 ? event.fingerList[0].localX : -1;
                   if (x < 0) {
                     return;
@@ -388,10 +396,12 @@ export struct HomePage {
                     return;
                   }
                   const idx: number = Math.round((x - CAPSULE_PAD) / (inner / 4));
-                  this.switchTab(idx < 0 ? 0 : (idx > 3 ? 3 : idx));
+                  this.capsuleTargetIndex = idx < 0 ? 0 : (idx > 3 ? 3 : idx);
                 })
                 .onActionEnd(() => {
+                  // 松手才切页：停在哪一项就切到哪一页
                   this.capsuleDragging = false;
+                  this.switchTab(this.capsuleTargetIndex);
                 })
                 .onActionCancel(() => {
                   this.capsuleDragging = false;
