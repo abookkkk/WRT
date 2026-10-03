@@ -53,6 +53,19 @@
             ]
           }
         ]
+      },
+      // 点光源特效演示（HDS hdsEffect）。独立 Ability，避免让演示代码碰业务页面：
+      //   hdc shell aa start -a PointLightAbility -b com.abookkkk.wrt
+      // 不需要时删掉本条 + 本文件 + main_pages.json 里的 pages/PointLightDemoPage 即可。
+      {
+        "name": "PointLightAbility",
+        "srcEntry": "./ets/pointlightability/PointLightAbility.ets",
+        "description": "$string:PointLightAbility_desc",
+        "icon": "$media:layered_image",
+        "label": "$string:PointLightAbility_label",
+        "startWindowIcon": "$media:startIcon",
+        "startWindowBackground": "$color:start_window_background",
+        "exported": true
       }
     ]
   }
