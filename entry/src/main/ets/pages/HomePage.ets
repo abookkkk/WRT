@@ -23,6 +23,7 @@ import { NetworkPage } from './NetworkPage';
 import { WifiPage } from './WifiPage';
 import { DevicesPage } from './DevicesPage';
 import { AboutPage } from './AboutPage';
+import { SpatialMaterial } from '../common/SpatialMaterial';
 
 import { OpenClashPage } from './OpenClashPage';
 import {
@@ -168,6 +169,36 @@ export struct HomePage {
       return raw < CAPSULE_PAD ? CAPSULE_PAD : (raw > CAPSULE_PAD + w * 3 ? CAPSULE_PAD + w * 3 : raw);
     }
     return CAPSULE_PAD + w * this.currentIndex;
+  }
+
+  /** 亮色模式判定：约束 5（亮色下 EXQUISITE 可能压白叠层）用它决定降档 */
+  private isLightMode(): boolean {
+    return this.appearance === 'light';
+  }
+
+  /** 当前该用的沉浸光感参数（HDS 标题栏与 HdsTabs 悬浮栏共用同一份） */
+  private materialParams(): hdsMaterial.SystemMaterialParams {
+    return SpatialMaterial.params('adaptive', this.isLightMode());
+  }
+
+  /** HdsTabs 的 MiniBar：折叠后显示的小胶囊（只做指示，不拦手势） */
+  @Builder
+  buildMiniBar() {
+    Row() {
+      SymbolGlyph($r('sys.symbol.house'))
+        .fontSize(ICON_M)
+        .fontColor([C_TEXT_2])
+        .renderingStrategy(SymbolRenderingStrategy.SINGLE);
+      Text('OpenWrt 管理')
+        .fontSize(F_TINY)
+        .fontColor(C_TEXT_2)
+        .margin({ left: SP_S });
+    }
+    .height(32)
+    .padding({ left: SP_M, right: SP_M })
+    .borderRadius(16)
+    .backgroundColor(C_FILL)
+    .alignItems(VerticalAlign.Center);
   }
 
   /** 切 Tab（自绘悬浮标签栏用） */
