@@ -107,7 +107,8 @@ HarmonyOS **默认禁止明文 HTTP**。想连局域网里的 `http://192.168.x.
 |---|---|
 | **沉浸式布局** | `expandSafeArea` 让渐变背景延伸到状态栏 / 导航栏之后（只扩展背景，内容仍留在安全区内） |
 | **系统符号图标** | `SymbolGlyph($r('sys.symbol.xxx'))` —— 标签栏与表单图标全用系统符号：`house` / `rectangle_stack` / `wifi` / `person` / `bolt` / `lock` / `lock_fill` / `eye` / `eye_slash` |
-| **全屏沉浸式 + 液态玻璃导航栏** | 窗口 `setWindowLayoutFullScreen(true)`，页面从**屏幕物理顶端**开始铺：卡片能滚到状态栏后面被虚化（华为图库那种观感）。顶栏 `.position({x:0,y:0})`+`zIndex` 悬浮、毛玻璃盖住状态栏那条而文字落在状态栏下方；底栏**自绘**（`barHeight(0)` + 自己算高度的 Row，底部垫出手势条高度，毛玻璃做成悬浮胶囊）。各页用 `AppStorage` 的 `safeTop`/`safeBottom` 自己留避让 |
+| **全屏沉浸式 + HDS 导航栏** | 窗口 `setWindowLayoutFullScreen(true)`，页面从**屏幕物理顶端**开始铺：卡片能滚到状态栏后面被虚化（华为图库那种观感）。上下两根栏都交给 **HDS**（`HdsNavigation` 的 MINI 标题栏 + `HdsTabs` 的 `barFloatingStyle` 悬浮胶囊），它们本身浮在内容之上（内容从栏下滚过去），所以各页用 `AppStorage` 的 `safeTop`/`safeBottom` 自己留避让 |
+| **HDS 组件化（HarmonyOS Design System）** | `HdsNavigation`（标题 / 副标题 / 右侧菜单 + 滚动渐变模糊）、`HdsTabs`（底部悬浮胶囊）、`HdsNavDestination`（二级页标题栏 + 返回）；材质统一走 `common/SpatialMaterial.ets`（`SystemMaterialParams`，按设备能力与浅色约束分档）。⚠️ 两个实测坑：HDS 默认跟**系统**深浅色（本 App 是应用级 `setColorMode`，要靠 `withTheme({ enableThemeColorMode: true })` + 自定义 `originalStyle.contentStyle` 颜色资源才对得上）；标题栏是浮层，页面要自己垫出标题高度 |
 | **渐变背景** | `linearGradient` 浅蓝 → 灰白 |
 | **玻璃拟态卡片** | 半透明白 `#F2FFFFFF` + 圆角 20 + `ShadowStyle.OUTER_DEFAULT_SM` |
 | **登录页** | 深蓝渐变头部 + 圆形半透明徽章 + 玻璃表单卡片；键盘「前往」键通过 `onSubmit` 直接提交登录 |
@@ -224,7 +225,7 @@ clashInfoRows() { Column() { Row() { Text('版本'); Text(this.version) } } }
       规范写进 `.codegenie/project_rule.md` 第七节第 10 条；写配置期间用 `.pullToRefresh(!this.busy)` 关掉下拉
 
 - [x] **在线设备改成仪表盘的二级页面** —— 原来它占一个底部 Tab，现在从仪表盘「在线设备」卡片点进（卡片右侧有 `›` 提示），
-      用 `Navigation` + `NavPathStack` + `NavDestination` 实现：整页盖住标签栏、自绘标题栏与返回按钮、系统返回键与侧滑返回由框架处理
+      用 `HdsNavigation` + `NavPathStack` + `HdsNavDestination` 实现：整页盖住标签栏、标题栏与返回箭头都是 HDS 的（MINI 模式），系统返回键与侧滑返回由框架处理
 
 - [x] **2.4G / 5G 射频卡都能折叠** —— 以前只有「关着的射频」才带收起按钮，现在两张卡都有「展开 / 收起」：
       默认仍是开着就展开、关着就收起（观感不变），折起来时显示一行摘要（SSID 数量 · 当前信道 · 功率），
@@ -264,6 +265,18 @@ clashInfoRows() { Column() { Row() { Text('版本'); Text(this.version) } } }
 - [x] **底部标签栏改成「悬浮胶囊」**（当下流行的那种）—— 原来是一条贴边通栏；现在是不贴边的圆角胶囊（左右各留 12vp、底部让开手势条），
       **选中项带药丸高亮**（用调色板的 `c_primary_soft` 当药丸底色，图标/文字同时切主色），整圈 1px 细边 + 轻微投影让它"浮"起来，
       材质与顶栏同一套液态玻璃（透明底 + `backgroundEffect` 纯模糊）。页面底部留白按「手势条 + 胶囊 60 + 边距」重算（`safeBottom`）
+
+- [x] **HDS 化：上下两根栏 + 二级页标题栏都换成 HDS 组件** —— 自绘的胶囊标签栏整块删掉，改用 `HdsTabs` 的
+      `barFloatingStyle`（圆角、两侧留边、避让手势条、沉浸光感材质由系统负责，点选 / 左右滑动切页仍是 `Tabs` 的老行为，内容靠
+      `barOverlap(true)` 从胶囊下面滚过去）；顶栏的自绘 Row（含 ⓘ / 外观 / 退出 三个按钮）也删掉，改用 `HdsNavigation` 的
+      MINI 标题栏（`content.title` 主标题 + 副标题、`content.menu` 三个菜单项、`IMMERSIVE_GRADIENT_BLUR` 滚动渐变模糊），
+      二级页同理换成 `HdsNavDestination` 的标题栏（自带返回箭头）。材质参数与 `SpatialMaterial` 共用一份。
+      实测踩到并修掉的四个坑：① HDS 标题栏默认从屏幕物理顶端排，右侧菜单会压到状态栏的电量图标上 → `avoidLayoutSafeArea: true`；
+      ② 标题栏是**浮层**（不吃布局），一级页 `safeTop` 与二级页内容都得自己垫出「状态栏 + 标题高度」；
+      ③ 菜单最多显示 3 个（`maxCount` 默认 3），这里正好 3 个；
+      ④ **HDS 默认跟系统深浅色**，应用级 `setColorMode` 强制浅色时会出现"白字压在浅色背景上"，要 `withTheme({ enableThemeColorMode: true })`
+      并把 `originalStyle / scrollEffectStyle` 的 `contentStyle`（标题 / 菜单 / 返回 / 分隔线）指到本项目 `base`+`dark` 两套颜色资源
+      （另：`miniBar` 试过 —— 展开态会把 4 个 Tab 收成当前项、收起态会在右侧多出一颗小胶囊，与本 App 的导航语义不合，故不启用）
 
 ### 待办
 

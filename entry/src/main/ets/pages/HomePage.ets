@@ -1,11 +1,11 @@
 /**
  * 主页（Tab 导航容器）
  *
- * 视觉特性（HarmonyOS 6）：
- *   - 沉浸式：expandSafeArea 让内容延伸到状态栏 / 导航栏区域
- *   - 渐变背景：浅蓝 → 灰白过渡
- *   - 液态玻璃上下栏：透明底 + backgroundEffect 纯模糊（内容从栏下滚过）
- *   - 系统符号图标：SymbolGlyph($r('sys.symbol.xxx'))，随选中态变色
+ * HDS 化（HarmonyOS Design System 组件）：
+ *   - HdsNavigation：MINI 沉浸标题栏（标题 / 副标题 / 右侧菜单），滚动渐变模糊 + 沉浸光感材质
+ *   - HdsTabs：底部悬浮胶囊标签栏（barFloatingStyle），材质与标题栏共用一份
+ *   - HdsNavDestination：二级页（在线设备 / 关于）的标题栏与返回
+ *   - 延续自绘的部分：渐变背景、卡片、Tab 项内容（图标 + 文字）
  *
  * 注意：$r() 的资源名必须是**字面量**，不能用模板字符串拼，
  * 所以下面每个 Tab 的图标都老老实实写一个 if 分支。
@@ -24,23 +24,36 @@ import { WifiPage } from './WifiPage';
 import { DevicesPage } from './DevicesPage';
 import { AboutPage } from './AboutPage';
 import { SpatialMaterial } from '../common/SpatialMaterial';
-import { HdsNavigation, HdsNavDestination, ScrollEffectType, SystemMaterialParams } from '@kit.UIDesignKit';
+import {
+  HdsNavigation, HdsNavDestination, HdsTabs, HdsTabsController, HdsTabsFloatingStyle,
+  HdsNavigationMenuItemOptions, HdsNavigationTitleMode, HdsNavDestinationTitleMode,
+  HdsTitleBarContentStyle, ScrollEffectType, DividerShowType, SystemMaterialParams
+} from '@kit.UIDesignKit';
 
 import { OpenClashPage } from './OpenClashPage';
 import {
   C_PRIMARY, C_BG_TOP, C_BG_MID, C_BG_BOTTOM, C_TEXT_1, C_TEXT_2, C_TEXT_3, C_DANGER,
-  C_FILL, C_DANGER_CHIP, C_DIVIDER, C_PRIMARY_SOFT,
-  F_HERO, F_TITLE, F_SECTION, F_CAPTION, F_TINY, ICON_L, ICON_M, SP_XS, SP_S, SP_M, SP_L, colorString
+  C_FILL, C_DIVIDER, F_TINY, ICON_L, SP_S, SP_M, colorString
 } from '../common/Theme';
 
-/** 顶栏内容高度（标题那一行 + 上下内边距，不含状态栏高度）：页面顶部留白按它算 */
-const HEADER_CONTENT_HEIGHT: number = 72;
-/** 底部悬浮胶囊标签栏高度（不含手势条高度与两侧留边） */
+/**
+ * HDS 标题栏在页面上占掉的高度（MINI 标题栏 56vp + 一点间距）。
+ *
+ * HDS 标题栏是**浮在内容之上**的（内容从它下面滚过去被渐变模糊），所以它不吃布局：
+ * 一级页（写进 `safeTop` 给四个 Tab 页读）得自己垫出这一条，第一张卡片才不会钻到标题下面。
+ * 二级页同理，只是它们本体自带上内边距，垫得少一点（见 HDS_MINI_TITLE_BAR_HEIGHT）。
+ */
+const HDS_TITLE_BAR_SPACE: number = 72;
+
+/**
+ * HDS MINI 标题栏本身的高度（vp）：二级页内容按「状态栏 + 它」自己垫。
+ *
+ * 比一级页的 HDS_TITLE_BAR_SPACE 小一圈，是因为二级页本体（关于 / 在线设备）
+ * 自己还带一条顶部内边距，再垫 72 就显得空。
+ */
+const HDS_MINI_TITLE_BAR_HEIGHT: number = 56;
+/** 底部悬浮胶囊标签栏高度（不含手势条高度与两侧留边）：页面底部留白按它算 */
 const TAB_BAR_CONTENT_HEIGHT: number = 60;
-/** 胶囊内单个 Tab 的高度：比胶囊矮一圈，选中时的药丸高亮才不会贴到胶囊边 */
-const TAB_ITEM_HEIGHT: number = TAB_BAR_CONTENT_HEIGHT - 12;
-/** 胶囊左右内边距（算"手指落在第几项"时要扣掉） */
-const CAPSULE_PAD: number = 6;
 
 @Component
 export struct HomePage {
@@ -61,18 +74,8 @@ export struct HomePage {
   /** 顶部安全区（状态栏）高度，单位 vp：顶栏自己垫这么高，内容才能从它后面滚过去 */
   @State private topInset: number = 0;
 
-  /** 自绘悬浮标签栏要用它切页（系统标签栏已置 0 高） */
-  private tabsController: TabsController = new TabsController();
-
-  /** 胶囊拖动状态：是否正在拖 / 手指在胶囊内的 x（vp）/ 胶囊实测宽度 —— 用来画跟随手指的柔光 */
-  @State private capsuleDragging: boolean = false;
-  @State private capsuleFingerX: number = 0;
-  @State private capsuleWidth: number = 0;
-  /**
-   * 拖动过程中手指当前落在哪一项：**松手时才用它切页**。
-   * 拖动中就切的话，手指来回滑时页面会反复切换（每次都带动画），观感很跳。
-   */
-  private capsuleTargetIndex: number = 0;
+  /** HdsTabs 的控制器（点悬浮栏 / 折叠迷你栏时由 HDS 自己切页） */
+  private tabsController: HdsTabsController = new HdsTabsController();
 
   /** 当前外观模式（跟随系统 / 浅色 / 深色）：按钮文案与图标都用它 */
   @State private appearance: AppearanceMode = 'system';
@@ -143,7 +146,7 @@ export struct HomePage {
       const bottomPx: number = Math.max(systemArea.bottomRect.height, indicatorArea.bottomRect.height);
       this.topInset = px2vp(systemArea.topRect.height);
       this.bottomInset = px2vp(bottomPx);
-      AppStorage.setOrCreate('safeTop', this.topInset + HEADER_CONTENT_HEIGHT);
+      AppStorage.setOrCreate('safeTop', this.topInset + HDS_TITLE_BAR_SPACE);
       // 胶囊栏是"浮"在屏幕下沿上方的：底部让开手势条 + 下边距，页面底部留白要按这个总高度算
       AppStorage.setOrCreate('safeBottom', this.bottomInset + TAB_BAR_CONTENT_HEIGHT + 16);
       console.info(`[HomePage] 安全区：状态栏 ${this.topInset}vp / 手势条 ${this.bottomInset}vp`);
@@ -151,25 +154,6 @@ export struct HomePage {
       // 拿不到就退回 0：两根栏少铺一点，功能不受影响
       console.warn('[HomePage] 读取安全区失败: ' + JSON.stringify(e));
     }
-  }
-
-  /** 胶囊内一项的宽度：药丸宽度与位移都用它 */
-  private pillWidth(): number {
-    const inner: number = this.capsuleWidth - CAPSULE_PAD * 2;
-    return inner > 0 ? inner / 4 : 0;
-  }
-
-  /** 药丸的 x：拖动时跟随手指（居中于指尖），松手后对齐当前项 —— 这就是"液态"的来源 */
-  private pillX(): number {
-    const w: number = this.pillWidth();
-    if (w <= 0) {
-      return CAPSULE_PAD;
-    }
-    if (this.capsuleDragging) {
-      const raw: number = this.capsuleFingerX - w / 2;
-      return raw < CAPSULE_PAD ? CAPSULE_PAD : (raw > CAPSULE_PAD + w * 3 ? CAPSULE_PAD + w * 3 : raw);
-    }
-    return CAPSULE_PAD + w * this.currentIndex;
   }
 
   /** 亮色模式判定：约束 5（亮色下 EXQUISITE 可能压白叠层）用它决定降档 */
@@ -182,33 +166,82 @@ export struct HomePage {
     return SpatialMaterial.params('adaptive', this.isLightMode());
   }
 
-  /** HdsTabs 的 MiniBar：折叠后显示的小胶囊（只做指示，不拦手势） */
-  @Builder
-  buildMiniBar() {
-    Row() {
-      SymbolGlyph($r('sys.symbol.house'))
-        .fontSize(ICON_M)
-        .fontColor([C_TEXT_2])
-        .renderingStrategy(SymbolRenderingStrategy.SINGLE);
-      Text('OpenWrt 管理')
-        .fontSize(F_TINY)
-        .fontColor(C_TEXT_2)
-        .margin({ left: SP_S });
-    }
-    .height(32)
-    .padding({ left: SP_M, right: SP_M })
-    .borderRadius(16)
-    .backgroundColor(C_FILL)
-    .alignItems(VerticalAlign.Center);
+  /**
+   * HDS 标题栏的配色：默认那套跟的是**系统**深浅色，跟本 App 的
+   * 「跟随系统 / 强制浅色 / 强制深色」不一致 —— 强制浅色时会出现白字压在浅色背景上。
+   * 这里改用本项目的颜色资源（base/dark 两套，随 App 色彩模式自动换）。
+   */
+  private titleContentStyle(): HdsTitleBarContentStyle {
+    return {
+      titleStyle: {
+        mainTitleColor: C_TEXT_1,
+        subTitleColor: C_TEXT_3
+      },
+      menuStyle: {
+        iconColor: C_TEXT_2,
+        backgroundColor: C_FILL
+      },
+      backIconStyle: {
+        iconColor: C_TEXT_1,
+        backgroundColor: C_FILL
+      },
+      dividerStyle: {
+        dividerColor: C_DIVIDER
+      }
+    };
   }
 
-  /** 切 Tab（自绘悬浮标签栏用） */
-  private switchTab(index: number): void {
-    if (index === this.currentIndex) {
-      return;
+  /**
+   * HdsTabs 悬浮胶囊样式：左右留边 + 让开手势条的那点下边距，材质与标题栏共用一份。
+   * 页面底部留白仍按 safeBottom 给（内容从胶囊下面滚过去，靠 barOverlap）。
+   */
+  private floatingStyle(): HdsTabsFloatingStyle {
+    return {
+      barSideMargin: SP_M,
+      barBottomMargin: SP_S,
+      systemMaterialEffect: this.materialParams()
+    };
+  }
+
+  /** 外观按钮的图标（跟随系统 / 深色 / 浅色） */
+  private appearanceSymbol(): Resource {
+    if (this.appearance === 'light') {
+      return $r('sys.symbol.sun_max');
     }
-    this.currentIndex = index;
-    this.tabsController.changeIndex(index);
+    if (this.appearance === 'dark') {
+      return $r('sys.symbol.moon_fill');
+    }
+    return $r('sys.symbol.auto_sun_max_fill');
+  }
+
+  /**
+   * HDS 标题栏右侧的菜单项：原来自绘顶栏那三个按钮 —— 关于 / 外观 / 退出。
+   * HDS 标题栏默认最多显示 3 个（maxCount 默认 3），这里正好 3 个，不会折进"更多"里。
+   */
+  private titleMenu(): Array<HdsNavigationMenuItemOptions> {
+    const items: Array<HdsNavigationMenuItemOptions> = [];
+    items.push({
+      content: {
+        icon: $r('sys.symbol.info_circle'),
+        label: '关于',
+        action: () => this.openAbout()
+      }
+    });
+    items.push({
+      content: {
+        icon: this.appearanceSymbol(),
+        label: this.appearanceLabel(),
+        action: () => this.cycleAppearance()
+      }
+    });
+    items.push({
+      content: {
+        icon: $r('sys.symbol.power'),
+        label: '退出',
+        action: () => this.handleLogout()
+      }
+    });
+    return items;
   }
 
   build() {
@@ -229,243 +262,46 @@ export struct HomePage {
           .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
 
         Column() {
-          // ===== 顶部标题栏 =====
-          Row() {
-            Column() {
-              // 顶栏塞了 ⓘ / 外观 / 退出 三个按钮，空间紧（外观按钮最长会显示「跟随系统」）。
-              // 用自适应字号：放得下就 22 号，放不下自动缩到最小 16 号 —— 不会换行、也不会被省略号截掉
-              Text('OpenWrt 管理')
-                .maxFontSize(F_TITLE)
-                .minFontSize(16)
-                .heightAdaptivePolicy(TextHeightAdaptivePolicy.MIN_FONT_SIZE_FIRST)
-                .fontWeight(FontWeight.Bold)
-                .fontColor(C_TEXT_1)
-                .maxLines(1);
-              Text('AX3000T · Filogic 820')
-                .fontSize(F_CAPTION)
-                .fontColor(C_TEXT_3)
-                .margin({ top: 2 });
+
+          // ===== Tab 内容 + HDS 悬浮胶囊标签栏 =====
+          // 原来那条自绘胶囊交给 HdsTabs 的悬浮样式：胶囊的圆角 / 两侧留边 / 避让手势条 /
+          // 沉浸光感材质都由系统负责，点选与左右滑动切页也还是 Tabs 的老行为。
+          HdsTabs({ barPosition: BarPosition.End, index: this.currentIndex, controller: this.tabsController }) {
+            TabContent() {
+              DashboardPage({ client: this.client, onOpenDevices: () => this.openDevices() })
             }
-            .alignItems(HorizontalAlign.Start)
-            .layoutWeight(1);
+            .tabBar(this.tabItem(0, '仪表盘'))
 
-            // ===== 关于（二级页面：版本 / 联系方式 / 检查更新）=====
-          Button() {
-            SymbolGlyph($r('sys.symbol.info_circle'))
-              .fontSize(ICON_M)
-              .fontColor([C_TEXT_2])
-              .renderingStrategy(SymbolRenderingStrategy.SINGLE);
-          }
-          .height(32)
-          .type(ButtonType.Capsule)
-          .backgroundColor(C_FILL)
-          .padding({ left: SP_M, right: SP_M })
-          .margin({ right: SP_S })
-          .onClick(() => this.openAbout());
-
-          // ===== 外观切换按钮：跟随系统 / 深色 / 浅色，点一下循环 =====
-            Button() {
-              Row() {
-                if (this.appearance === 'light') {
-                  SymbolGlyph($r('sys.symbol.sun_max'))
-                    .fontSize(ICON_M)
-                    .fontColor([C_TEXT_2])
-                    .renderingStrategy(SymbolRenderingStrategy.SINGLE);
-                } else if (this.appearance === 'dark') {
-                  SymbolGlyph($r('sys.symbol.moon_fill'))
-                    .fontSize(ICON_M)
-                    .fontColor([C_TEXT_2])
-                    .renderingStrategy(SymbolRenderingStrategy.SINGLE);
-                } else {
-                  SymbolGlyph($r('sys.symbol.auto_sun_max_fill'))
-                    .fontSize(ICON_M)
-                    .fontColor([C_TEXT_2])
-                    .renderingStrategy(SymbolRenderingStrategy.SINGLE);
-                }
-                Text(this.appearanceLabel())
-                  .fontSize(F_CAPTION)
-                  .fontColor(C_TEXT_2)
-                  .margin({ left: SP_XS });
-              }
-              .alignItems(VerticalAlign.Center);
+            TabContent() {
+              NetworkPage({ client: this.client })
             }
-            .height(32)
-            .type(ButtonType.Capsule)
-            .backgroundColor(C_FILL)
-            .padding({ left: SP_S, right: SP_S })
-            .margin({ right: SP_S })
-            .onClick(() => this.cycleAppearance());
+            .tabBar(this.tabItem(1, '网络'))
 
-            Button('退出')
-              .fontSize(F_CAPTION)
-              .fontColor(C_DANGER)
-              .backgroundColor(C_DANGER_CHIP)
-              .height(32)
-              .type(ButtonType.Capsule)
-              .onClick(() => this.handleLogout());
+            TabContent() {
+              WifiPage({ client: this.client })
+            }
+            .tabBar(this.tabItem(2, '无线'))
+
+            TabContent() {
+              OpenClashPage({ client: this.client })
+            }
+            .tabBar(this.tabItem(3, 'Clash'))
           }
           .width('100%')
-          // 顶部垫出状态栏高度：栏的毛玻璃因此从屏幕物理顶端开始铺（盖住状态栏那条），
-          // 但栏里的文字/按钮仍落在状态栏下方，不会和时钟、电量图标打架
-          .padding({ left: SP_L, right: SP_L, top: this.topInset + SP_S, bottom: SP_S })
-          .alignItems(VerticalAlign.Center)
-          // 「液态玻璃」：底色**完全透明**、不加任何色调，只对背后的内容做模糊（再轻微提一点饱和度），
-          // 让玻璃有存在感但不遮挡内容。要更糊就把 radius 调大
-          .backgroundColor(Color.Transparent)
-          .backgroundEffect({ radius: 20, saturation: 1.4, brightness: 1.0, color: Color.Transparent })
-          .border({ width: { bottom: 1 }, color: C_DIVIDER })
-          // 脱离布局流、绝对定位到屏幕顶端：Tabs 因此能占满整屏，卡片可以从顶栏后面滚过去被虚化
-          .position({ x: 0, y: 0 })
-          .zIndex(2);
+          .barMode(BarMode.Fixed)
+          // 内容从胶囊下面滚过去（页面自身的底部留白仍按 safeBottom 给）
+          .barOverlap(true)
+          .barBackgroundColor(Color.Transparent)
+          // 悬浮胶囊：留边 + 沉浸光感（参数与 HDS 标题栏共用一份）
+          .barFloatingStyle(this.floatingStyle())
+          // 左右滑动切页（Tabs 的默认能力，这里显式写出来表明是刻意保留的）
+          .scrollable(true)
+          .animationDuration(280)
+          .onChange((index: number) => {
+            this.currentIndex = index;
+          })
+          .layoutWeight(1);
 
-          // ===== Tab 内容 + 自绘悬浮标签栏 =====
-          Stack({ alignContent: Alignment.Bottom }) {
-            Tabs({ barPosition: BarPosition.End, index: this.currentIndex, controller: this.tabsController }) {
-              TabContent() {
-                DashboardPage({ client: this.client, onOpenDevices: () => this.openDevices() })
-              }
-              .tabBar(this.tabItem(0, '仪表盘'))
-
-              TabContent() {
-                NetworkPage({ client: this.client })
-              }
-              .tabBar(this.tabItem(1, '网络'))
-
-              TabContent() {
-                WifiPage({ client: this.client })
-              }
-              .tabBar(this.tabItem(2, '无线'))
-
-              TabContent() {
-                OpenClashPage({ client: this.client })
-              }
-              .tabBar(this.tabItem(3, 'Clash'))
-            }
-            .width('100%')
-            .height('100%')
-            // 系统标签栏置 0 高：栏改由下面自绘那条担任（它才能浮在内容之上 + 铺到屏幕物理底部）
-            .barHeight(0)
-            .barMode(BarMode.Fixed)
-            // 左右滑动切页（Tabs 的默认能力，这里显式写出来表明是刻意保留的）
-            .scrollable(true)
-            .animationDuration(280)
-            .onChange((index: number) => {
-              this.currentIndex = index;
-            });
-
-            // ===== 自绘悬浮胶囊标签栏 =====
-            // 样式：不贴边、独立圆角胶囊、选中项带药丸高亮（当下流行的那种）。
-            // 为什么自绘（这几点都在模拟器上试过）：
-            //   · 全屏布局后，系统的 BarPosition.End 标签栏会贴到屏幕**物理**底部 —— 掉进手势条里；
-            //   · 想只把栏往上抬：barHeight 只会让栏变高、连带把内容区往上挤（内容就没法从栏下滚过了）；
-            //   · 自绘这条：浮在内容之上、底部让开手势条，卡片能从它下面滚过去并被虚化。
-            Row() {
-              // 「液态」药丸：一整块（不是每项各自一块），拖动时跟着指尖滑、松手吸附到最近一项。
-              // duration=0 保证跟手不延迟，松手后用 Friction 曲线滑过去
-              Column()
-                .width(this.pillWidth())
-                .height(TAB_ITEM_HEIGHT)
-                .borderRadius(TAB_ITEM_HEIGHT / 2)
-                .backgroundColor(C_PRIMARY_SOFT)
-                .position({ x: this.pillX(), y: CAPSULE_PAD })
-                .animation(this.capsuleDragging
-                  ? { duration: 0 }
-                  : { duration: 340, curve: Curve.Friction })
-                .hitTestBehavior(HitTestMode.None)
-
-              Column() {
-                this.tabItem(0, '仪表盘')
-              }
-              .height(TAB_ITEM_HEIGHT)
-              .layoutWeight(1)
-              .onClick(() => this.switchTab(0));
-
-              Column() {
-                this.tabItem(1, '网络')
-              }
-              .height(TAB_ITEM_HEIGHT)
-              .layoutWeight(1)
-              .onClick(() => this.switchTab(1));
-
-              Column() {
-                this.tabItem(2, '无线')
-              }
-              .height(TAB_ITEM_HEIGHT)
-              .layoutWeight(1)
-              .onClick(() => this.switchTab(2));
-
-              Column() {
-                this.tabItem(3, 'Clash')
-              }
-              .height(TAB_ITEM_HEIGHT)
-              .layoutWeight(1)
-              .onClick(() => this.switchTab(3));
-
-              // 「光感」：跟着手指位置的一团柔光（绝对定位、不参与布局，松手即消失）
-              if (this.capsuleDragging) {
-                Column()
-                  .width(190)
-                  .height(TAB_ITEM_HEIGHT)
-                  .borderRadius(TAB_ITEM_HEIGHT / 2)
-                  .radialGradient({
-                    center: ['50%', '50%'],
-                    radius: 95,
-                    colors: [['#66FFFFFF', 0.0], ['#00FFFFFF', 1.0]]
-                  })
-                  .position({ x: this.capsuleFingerX - 95, y: CAPSULE_PAD })
-                  .hitTestBehavior(HitTestMode.None)
-              }
-            }
-            .height(TAB_BAR_CONTENT_HEIGHT)
-            .padding({ left: 6, right: 6 })
-            // 两侧留边 + 底部让开手势条：所以它是一条「浮」在屏幕下沿上方的胶囊，而不是贴边通栏
-            .margin({ left: SP_M, right: SP_M, bottom: SP_S + this.bottomInset })
-            .borderRadius(TAB_BAR_CONTENT_HEIGHT / 2)
-            // 与顶栏同一套「液态玻璃」：透明底 + 纯模糊，整圈一条细线 + 轻微投影让它浮起来
-            .backgroundColor(Color.Transparent)
-            .backgroundEffect({ radius: 20, saturation: 1.4, brightness: 1.0, color: Color.Transparent })
-            .border({ width: 1, color: C_DIVIDER })
-            .shadow(ShadowStyle.OUTER_DEFAULT_SM)
-            .clip(true)
-            // 量一下胶囊宽度：把手指的绝对位置折算成"第几项"要用它
-            .onAreaChange((oldArea: Area, newArea: Area) => {
-              this.capsuleWidth = newArea.width as number;
-            })
-            // 华为商城那种胶囊：手指在胶囊上滑到哪一项，就切到哪一页（跨过中线即切），
-            // 柔光跟着手指走；松手时停在哪一项就是哪一页（来回滑会跟着回退）。
-            .gesture(
-              PanGesture({ direction: PanDirection.Horizontal, distance: 6 })
-                .onActionStart(() => {
-                  this.capsuleDragging = true;
-                  this.capsuleTargetIndex = this.currentIndex;
-                })
-                .onActionUpdate((event: GestureEvent) => {
-                  // 拖动过程中只更新"柔光位置 + 目标项"，**不切页**：
-                  // 手指来回滑时页面反复切会很跳，等松手再切
-                  const x: number = event.fingerList.length > 0 ? event.fingerList[0].localX : -1;
-                  if (x < 0) {
-                    return;
-                  }
-                  this.capsuleFingerX = x;
-                  const inner: number = this.capsuleWidth - CAPSULE_PAD * 2;
-                  if (inner <= 0) {
-                    return;
-                  }
-                  const idx: number = Math.round((x - CAPSULE_PAD) / (inner / 4));
-                  this.capsuleTargetIndex = idx < 0 ? 0 : (idx > 3 ? 3 : idx);
-                })
-                .onActionEnd(() => {
-                  // 松手才切页：停在哪一项就切到哪一页
-                  this.capsuleDragging = false;
-                  this.switchTab(this.capsuleTargetIndex);
-                })
-                .onActionCancel(() => {
-                  this.capsuleDragging = false;
-                })
-            );
-          }
-          .layoutWeight(1)
-          .width('100%');
         }
         .width('100%')
         .height('100%')
@@ -474,16 +310,40 @@ export struct HomePage {
       .height('100%')
     }
     .titleBar({
+      // 标题 / 菜单交给 HDS 标题栏：沉浸光感材质、滚动渐变模糊、状态栏避让都由它负责，
+      // 自绘那条顶栏（含 ⓘ / 外观 / 退出 三个按钮）整块删掉。
       style: {
         scrollEffectOpts: {
           enableScrollEffect: true,
           scrollEffectType: ScrollEffectType.IMMERSIVE_GRADIENT_BLUR
         },
-        systemMaterialEffect: this.materialParams()
-      }
+        systemMaterialEffect: this.materialParams(),
+        // 静止 / 滚动后两态的配色都走本项目的资源（见 titleContentStyle）
+        originalStyle: { contentStyle: this.titleContentStyle() },
+        scrollEffectStyle: { contentStyle: this.titleContentStyle() }
+      },
+      content: {
+        title: {
+          mainTitle: 'OpenWrt 管理',
+          subTitle: 'AX3000T · Filogic 820'
+        },
+        menu: { value: this.titleMenu() },
+        // 分隔线跟着滚动出现 / 消失（HDS 默认行为，这里写出来表明是刻意保留的）
+        divider: { showType: DividerShowType.AUTO }
+      },
+      // 全屏布局下标题栏默认从屏幕物理顶端排，右侧菜单会压到状态栏的电量 / 信号图标上：
+      // 打开避让，让标题栏自己让出状态栏这一条
+      avoidLayoutSafeArea: true
     })
     .mode(NavigationMode.Stack)
-    .hideTitleBar(true)
+    .hideTitleBar(false)
+    .titleMode(HdsNavigationTitleMode.MINI)
+    // 首页是页面栈的根，没有上一级：MINI 标题栏默认会给一个返回箭头，这里关掉
+    .hideBackButton(true)
+    // HDS 组件默认跟**系统**深浅色走，而本 App 的外观是应用级 setColorMode（可强制浅/深）。
+    // 打开这个开关，标题栏（以及范围内的 HdsTabs）才跟着 App 的色彩模式换色 ——
+    // 否则强制浅色时会出现"白字压在浅色背景上"看不见的标题
+    .withTheme({ enableThemeColorMode: true })
     .navDestination(this.pageMap)
     .width('100%')
     .height('100%')
@@ -528,40 +388,11 @@ export struct HomePage {
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM]);
   }
 
-  /** 二级页面通用标题栏：返回 + 标题（两个二级页共用，样式一致） */
-  @Builder
-  navTitleBar(title: string) {
-    Row() {
-      Button() {
-        SymbolGlyph($r('sys.symbol.chevron_left'))
-          .fontSize(ICON_M)
-          .fontColor([C_TEXT_1])
-          .renderingStrategy(SymbolRenderingStrategy.SINGLE);
-      }
-      .height(32)
-      .type(ButtonType.Capsule)
-      .backgroundColor(C_FILL)
-      .padding({ left: SP_M, right: SP_M })
-      .onClick(() => this.pathStack.pop());
-
-      Text(title)
-        .fontSize(F_SECTION)
-        .fontWeight(FontWeight.Bold)
-        .fontColor(C_TEXT_1)
-        .layoutWeight(1)
-        .margin({ left: SP_M });
-    }
-    .width('100%')
-    // 全屏布局后二级页也从屏幕物理顶端开始铺，标题栏自己垫出状态栏高度
-    .padding({ left: SP_L, right: SP_L, top: this.topInset + SP_S, bottom: SP_S })
-    .alignItems(VerticalAlign.Center);
-  }
-
   /**
    * 二级页面：在线设备（从仪表盘「在线设备」卡片点进来）。
    *
-   * 推入的 NavDestination 会整页盖住标签栏，所以背景和标题栏都自己来：
-   * 返回按钮走 pathStack.pop()，系统返回键与侧滑返回由 Navigation 负责。
+   * 标题栏也交给 HDS（HdsNavDestination 的 MINI 模式：返回箭头 + 标题）：
+   * 返回箭头走系统默认的 pop，系统返回键与侧滑返回仍由 Navigation 负责。
    */
   @Builder
   devicesDestination() {
@@ -569,23 +400,27 @@ export struct HomePage {
       Stack({ alignContent: Alignment.TopStart }) {
         this.navBackground();
 
+        // 设备列表（复用在线设备页本体）：HDS 标题栏浮在上面，内容自己垫出一条
         Column() {
-          this.navTitleBar('在线设备');
-
-          // 设备列表（复用在线设备页本体）
-          Column() {
-            DevicesPage({ client: this.client })
-          }
-          .layoutWeight(1)
-          .width('100%');
+          DevicesPage({ client: this.client })
         }
         .width('100%')
-        .height('100%');
+        .height('100%')
+        .padding({ top: this.topInset + HDS_MINI_TITLE_BAR_HEIGHT });
       }
       .width('100%')
       .height('100%');
     }
-    .hideTitleBar(true);
+    .titleBar({
+      style: { systemMaterialEffect: this.materialParams(), originalStyle: { contentStyle: this.titleContentStyle() } },
+      content: { title: { mainTitle: '在线设备' } },
+      // 与首页同理：全屏布局下 HDS 标题栏要自己让开状态栏那一条，
+      // 否则返回箭头会压到状态栏的时钟上
+      avoidLayoutSafeArea: true
+    })
+    .titleMode(HdsNavDestinationTitleMode.MINI)
+    .hideTitleBar(false)
+    .withTheme({ enableThemeColorMode: true });
   }
 
   /** 二级页面：关于（版本信息 / 联系方式 / 检查更新并自动下载） */
@@ -596,21 +431,23 @@ export struct HomePage {
         this.navBackground();
 
         Column() {
-          this.navTitleBar('关于');
-
-          Column() {
-            AboutPage()
-          }
-          .layoutWeight(1)
-          .width('100%');
+          AboutPage()
         }
         .width('100%')
-        .height('100%');
+        .height('100%')
+        .padding({ top: this.topInset + HDS_MINI_TITLE_BAR_HEIGHT });
       }
       .width('100%')
       .height('100%');
     }
-    .hideTitleBar(true);
+    .titleBar({
+      style: { systemMaterialEffect: this.materialParams(), originalStyle: { contentStyle: this.titleContentStyle() } },
+      content: { title: { mainTitle: '关于' } },
+      avoidLayoutSafeArea: true
+    })
+    .titleMode(HdsNavDestinationTitleMode.MINI)
+    .hideTitleBar(false)
+    .withTheme({ enableThemeColorMode: true });
   }
 
   /**
