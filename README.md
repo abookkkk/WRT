@@ -116,6 +116,7 @@ HarmonyOS **默认禁止明文 HTTP**。想连局域网里的 `http://192.168.x.
 | **统一设计令牌** | `entry/src/main/ets/common/Theme.ets` 集中管理颜色 / 圆角 / 间距 / 字号（颜色是资源引用，不是色值） |
 | **深色模式** | 调色板两套资源：`resources/base/element/color.json`（浅色）+ `resources/dark/element/color.json`（深色），由 `ApplicationContext.setColorMode()` 切换；`COLOR_MODE_NOT_SET` 即跟随系统。Canvas / 弹窗按钮这类收不了 `Resource` 的地方用 `Theme.colorString()` 运行时取色 |
 | **点光源特效（独立演示）** | HDS `hdsEffect.HdsEffectBuilder().pointLight()` + `.visualEffect()`：浅色组件表面 + 深色环境下模拟虚拟光源照射的折射质感，按压 / 开关可动态调强度（`@State` + `.animation` 300ms）。独立 Ability 承载，不影响主 App；详见下方「点光源特效演示」一节 |
+| **按压发光（已接进业务组件）** | 同一套点光源，以「按下即亮、松手回落」接到登录按钮 / 仪表盘卡片 / 无线页动作按钮 / 设备备注按钮上：统一走 `common/PressGlow.ets`（`PressGlow.effect(pressed)` + `PressGlow.track()` + `PressGlow.ANIM`），**只追加效果、不改任何原有颜色 / 尺寸 / 圆角 / 布局**，一行 `PressGlow.enabled = false` 可整体关掉 |
 | **应用图标** | 分层图标 `layered_image`：`foreground.png` 1024×1024（图标内容限制在中央 640 安全区内，圆角 / 圆形遮罩都不会切到图形）+ `background.png` 浅蓝→白渐变 + 启动图 `startIcon.png` 512×512 |
 
 > 💡 **实时速率怎么做的**：用 `luci-rpc.getNetworkDevices` —— **一次请求**就返回全部网卡的
@@ -141,6 +142,7 @@ entry/src/main/
     ├── common/
     │   ├── Theme.ets                # 设计令牌（颜色引用 / 圆角 / 间距 / 字号）+ Canvas/弹窗取色函数
     │   ├── SpatialMaterial.ets      # HDS 沉浸光感材质档位（SystemMaterialParams，按设备能力降档）
+    │   ├── PressGlow.ets            # 按压发光（HDS 点光源）：给现有组件追加 visualEffect + 按压状态
     │   └── RefreshPolicy.ets        # 统一下拉刷新策略（LoadKind 三档 + 失败反馈），五个 Tab 页共用
     ├── components/
     │   └── PointLightDemo.ets       # 点光源特效演示（HDS hdsEffect.pointLight，可整块塞进任意页面）
@@ -206,6 +208,27 @@ Component()
    交互日志确认按压 / 开关 / 切换都已生效；
 3. 组件表面必须**浅色**、环境必须**深色**，否则看不出折射层次；单个组件最多同时受 **12 个**光源照亮；
 4. 支持 `.visualEffect()` 的组件：Button / Toggle / Row / Column / Image / Flex / Stack / Select / Menu / MenuItem。
+
+### 已接进业务组件的按压发光
+
+统一封装在 [`entry/src/main/ets/common/PressGlow.ets`](entry/src/main/ets/common/PressGlow.ets)，调用点只加三行
+（一个 `@State` 按压标志 + `.visualEffect(PressGlow.effect(...))` + `.onTouch(PressGlow.track(...))` + `.animation(PressGlow.ANIM)`）：
+
+| 位置 | 组件 | 备注 |
+|---|---|---|
+| `LoginPage` | 「登 录」按钮（渐变胶囊） | 主操作，最先被看到 |
+| `DashboardPage` | 「实时网速」卡片、「在线设备」卡片 | 在线设备卡原有 `onClick` 不变，点开二级页照常 |
+| `WifiPage` | 「保存射频设置」「+ 新增 SSID」「扫描 …」按钮 | 用一个 `glowTarget` 字段按 `radioName` 区分，同屏只会亮一个 |
+| `DevicesPage` | 每台设备的「备注 / 改备注」按钮 | 按 MAC 区分 |
+
+参数：`intensity` 按住 3.0 / 松开 0、`height` 120vp、`sourceType` SOFT、`illuminatedType` BORDER_CONTENT、
+颜色白、过渡 300ms + `Curve.Smooth`。**总开关**：`PressGlow.enabled = false`（所有调用点一起失效，观感回到改动前）。
+
+两点如实说明：
+- 卡片本身用的是项目原有配色（浅色模式是半透明白、深色模式是半透明深色），所以**浅色模式下光感最明显**，
+  深色模式下会弱一些 —— 按约束没有为了效果去改组件配色；
+- 该模拟器不支持点光源渲染，所以模拟器上观感与改动前**完全一致**（已逐个页面截图比对确认无回归）；
+  按压链路用日志验证过：按住时 `SetPointLight intensity success 3.000000`、松手 `0.000000`（`height 120` / `sourceType 1` / `illuminatedType 3`）。
 
 ---
 

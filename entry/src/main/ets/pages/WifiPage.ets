@@ -39,6 +39,8 @@ import {
 } from '../common/Theme';
 import { shouldShowErrorPage, shouldToast, notifyLoadFailed } from '../common/RefreshPolicy';
 import type { LoadKind } from '../common/RefreshPolicy';
+// 按压发光（HDS 点光源）：只追加 visualEffect + 按压状态，不改按钮原有样式
+import { PressGlow } from '../common/PressGlow';
 
 /** 页面用的客户端条目 */
 class ClientItem {
@@ -124,6 +126,12 @@ export struct WifiPage {
   @State private dataVersion: number = 0;
   /** 用户手动折 / 展过的射频（section → 是否展开）。loadData 每次都重建 RadioItem，靠它把用户的选择还原 */
   private expandedOverride: Record<string, boolean> = {};
+
+  /**
+   * 按压发光：当前被按住的按钮标识（'' = 没有）。
+   * 用一个字段而不是每个按钮一个 boolean —— 同屏本来也只会按住一个按钮。
+   */
+  @State private glowTarget: string = '';
 
   aboutToAppear(): void {
     this.loadData();
@@ -338,6 +346,14 @@ export struct WifiPage {
         .fontSize(14)
         .enabled(!this.busy)
         .margin({ top: 10 })
+        // 按住时按钮表面点光源亮起（原有底色 / 尺寸 / 圆角都没动）
+        .visualEffect(PressGlow.effect(this.glowTarget === 'save:' + radio.radioName))
+        .onTouch((event: TouchEvent) => {
+          PressGlow.track(event, (pressed: boolean) => {
+            this.glowTarget = pressed ? 'save:' + radio.radioName : '';
+          });
+        })
+        .animation(PressGlow.ANIM)
         .onClick(() => this.saveRadio(radio));
 
       Divider().margin({ top: 14, bottom: 12 });
@@ -350,6 +366,13 @@ export struct WifiPage {
           .fontSize(12).height(30).type(ButtonType.Capsule)
           .backgroundColor(C_PRIMARY)
           .enabled(!this.busy)
+          .visualEffect(PressGlow.effect(this.glowTarget === 'addSsid:' + radio.radioName))
+          .onTouch((event: TouchEvent) => {
+            PressGlow.track(event, (pressed: boolean) => {
+              this.glowTarget = pressed ? 'addSsid:' + radio.radioName : '';
+            });
+          })
+          .animation(PressGlow.ANIM)
           .onClick(() => this.confirmAddSsid(radio));
       }
       .width('100%').margin({ bottom: 10 });
@@ -363,6 +386,13 @@ export struct WifiPage {
         .backgroundColor(C_WARNING)
         .margin({ top: 12 })
         .enabled(!this.busy && !this.scanning)
+        .visualEffect(PressGlow.effect(this.glowTarget === 'scan:' + radio.radioName))
+        .onTouch((event: TouchEvent) => {
+          PressGlow.track(event, (pressed: boolean) => {
+            this.glowTarget = pressed ? 'scan:' + radio.radioName : '';
+          });
+        })
+        .animation(PressGlow.ANIM)
         .onClick(() => this.doScan(radio));
       }
     }
