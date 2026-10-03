@@ -15,14 +15,6 @@
     {
       "name": "permission_internet_reason",
       "value": "用于连接路由器后台获取网络状态"
-    },
-    {
-      "name": "PointLightAbility_desc",
-      "value": "点光源特效演示（HDS hdsEffect.pointLight）"
-    },
-    {
-      "name": "PointLightAbility_label",
-      "value": "点光源演示"
     }
   ]
 }

@@ -17,8 +17,6 @@ import {
   F_HERO, F_BODY, F_CAPTION, F_TINY,
   R_CARD, R_INPUT, R_BTN, SP_S, SP_M, SP_L, SP_XL, ICON_M
 } from '../common/Theme';
-// 按压发光（HDS 点光源）：只追加 visualEffect + 按压状态，不改登录按钮原有样式
-import { PressGlow } from '../common/PressGlow';
 
 /** 字段行统一样式用的高度 */
 const FIELD_HEIGHT: number = 50;
@@ -36,8 +34,6 @@ export struct LoginPage {
   @State private rememberPassword: boolean = false;
   /** 保存时是否走了加密存储（false = 退化成明文，页面要如实标出来） */
   @State private credentialEncrypted: boolean = true;
-  /** 登录按钮是否被按住（按压发光用） */
-  @State private loginPressed: boolean = false;
   private credStore: CredentialStore = new CredentialStore();
 
   private onLoginSuccess?: (client: OpenWrtClient) => void;
@@ -276,14 +272,6 @@ export struct LoginPage {
               })
               .shadow(ShadowStyle.OUTER_FLOATING_SM)
               .enabled(!this.isLoggingIn)
-              // 按住时按钮表面点光源亮起（渐变底 / 尺寸 / 圆角都没动）
-              .visualEffect(PressGlow.effect(this.loginPressed))
-              .onTouch((event: TouchEvent) => {
-                PressGlow.track(event, (pressed: boolean) => {
-                  this.loginPressed = pressed;
-                });
-              })
-              .animation(PressGlow.ANIM)
               .onClick(() => this.handleLogin());
 
             if (this.isLoggingIn) {

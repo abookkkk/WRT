@@ -16,8 +16,6 @@ import {
 } from '../common/Theme';
 import { shouldShowErrorPage, shouldToast, notifyLoadFailed } from '../common/RefreshPolicy';
 import type { LoadKind } from '../common/RefreshPolicy';
-// 按压发光（HDS 点光源）：只追加 visualEffect + 按压状态，不改按钮原有样式
-import { PressGlow } from '../common/PressGlow';
 
 // 颜色统一走 Theme 里的资源（浅色/深色两套自动切换）
 const COLOR_CARD_BG: ResourceColor = C_CARD;
@@ -42,8 +40,6 @@ export struct DevicesPage {
   @State private hasError: boolean = false;
   @State private errorMsg: string = '';
   @State private activeCount: number = 0;
-  /** 按压发光的按钮（'' = 没有；值是 MAC）：同屏只会按住一个 */
-  @State private glowMac: string = '';
 
   aboutToAppear(): void {
     this.loadNotes();
@@ -121,29 +117,13 @@ export struct DevicesPage {
                         .fontSize(11).height(26).type(ButtonType.Capsule)
                         .backgroundColor(C_FILL).fontColor(COLOR_PRIMARY)
                         .margin({ left: 10 })
-                        // 按住时按钮表面点光源亮起（原有底色 / 尺寸没动）
-                        .visualEffect(PressGlow.effect(this.glowMac === device.mac))
-                        .onTouch((event: TouchEvent) => {
-                          PressGlow.track(event, (pressed: boolean) => {
-                            this.glowMac = pressed ? device.mac : '';
-                          });
-                        })
-                        .animation(PressGlow.ANIM)
                         .onClick(() => this.openNoteDialog(device));
                     }
                     .width('100%').alignItems(VerticalAlign.Center);
                   }
                   .width('100%').padding(16).backgroundColor(COLOR_CARD_BG)
                   .borderRadius(18).shadow(ShadowStyle.OUTER_DEFAULT_SM)
-                  .margin({ bottom: 10 })
-                  // 按住整张设备卡时表面点光源亮起（原有配色 / 圆角 / 阴影都没动）
-                  .visualEffect(PressGlow.effect(this.glowMac === 'card:' + device.mac))
-                  .onTouch((event: TouchEvent) => {
-                    PressGlow.track(event, (pressed: boolean) => {
-                      this.glowMac = pressed ? 'card:' + device.mac : '';
-                    });
-                  })
-                  .animation(PressGlow.ANIM);
+                  .margin({ bottom: 10 });
                 }
               }, (device: DhcpLease, index?: number) => {
                 // key 里带上备注：备注改了才会重建这张卡（ArkUI 会复用条目节点，不换 key 不刷新）

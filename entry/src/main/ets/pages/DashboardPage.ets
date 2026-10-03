@@ -14,8 +14,6 @@ import {
 } from '../common/Theme';
 import { shouldShowErrorPage, shouldToast, notifyLoadFailed } from '../common/RefreshPolicy';
 import type { LoadKind } from '../common/RefreshPolicy';
-// 按压发光（HDS 点光源）：只追加 visualEffect + 按压状态，不改卡片原有样式
-import { PressGlow } from '../common/PressGlow';
 
 // 颜色统一走 Theme 里的资源（浅色/深色两套自动切换），页面内不再写死色值
 const COLOR_PRIMARY: ResourceColor = C_PRIMARY;
@@ -68,18 +66,6 @@ export struct DashboardPage {
   /** 下拉刷新中：只驱动 Refresh 的顶部指示器，不参与整页 Loading */
   @State private isRefreshing: boolean = false;
   private refreshTimer: number = -1;
-
-  // ---- 按压发光（HDS 点光源）----
-  /** 「实时网速」卡片是否被按住 */
-  @State private rateCardPressed: boolean = false;
-  /** 「在线设备」卡片是否被按住 */
-  @State private deviceCardPressed: boolean = false;
-  /** 「路由器信息」卡片是否被按住 */
-  @State private routerCardPressed: boolean = false;
-  /** 「运行状态」卡片是否被按住 */
-  @State private statusCardPressed: boolean = false;
-  /** 「内存使用率」卡片是否被按住 */
-  @State private memoryCardPressed: boolean = false;
 
   // ---- 实时网速 ----
   @State private wanRxRate: number = 0;
@@ -200,43 +186,21 @@ export struct DashboardPage {
               }
               .width('100%').padding(SP_XL).backgroundColor(C_CARD)
               .borderRadius(R_CARD).shadow(ShadowStyle.OUTER_DEFAULT_SM)
-              .margin({ bottom: 14 })
-              // 按住这张卡时表面点光源亮起（原有配色 / 圆角 / 阴影都没动）
-              .visualEffect(PressGlow.effect(this.rateCardPressed))
-              .onTouch((event: TouchEvent) => {
-                PressGlow.track(event, (pressed: boolean) => {
-                  this.rateCardPressed = pressed;
-                });
-              })
-              .animation(PressGlow.ANIM);
+              .margin({ bottom: 14 });
 
               // 卡片 1：路由器信息
               Column() {
                 Text('路由器信息').fontSize(16).fontWeight(FontWeight.Bold).width('100%');
                 this.routerInfoRows();
               }
-              .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 })
-              .visualEffect(PressGlow.effect(this.routerCardPressed))
-              .onTouch((event: TouchEvent) => {
-                PressGlow.track(event, (pressed: boolean) => {
-                  this.routerCardPressed = pressed;
-                });
-              })
-              .animation(PressGlow.ANIM);
+              .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
 
               // 卡片 2：运行状态
               Column() {
                 Text('运行状态').fontSize(16).fontWeight(FontWeight.Bold).width('100%');
                 this.runStatusRows();
               }
-              .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 })
-              .visualEffect(PressGlow.effect(this.statusCardPressed))
-              .onTouch((event: TouchEvent) => {
-                PressGlow.track(event, (pressed: boolean) => {
-                  this.statusCardPressed = pressed;
-                });
-              })
-              .animation(PressGlow.ANIM);
+              .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
 
               // 卡片 3：内存使用率
               Column() {
@@ -258,14 +222,7 @@ export struct DashboardPage {
                 }
                 .width('100%').margin({ top: 6 });
               }
-              .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 })
-              .visualEffect(PressGlow.effect(this.memoryCardPressed))
-              .onTouch((event: TouchEvent) => {
-                PressGlow.track(event, (pressed: boolean) => {
-                  this.memoryCardPressed = pressed;
-                });
-              })
-              .animation(PressGlow.ANIM);
+              .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
 
               // 卡片 4：在线设备
               Column() {
@@ -287,13 +244,6 @@ export struct DashboardPage {
                   .fontSize(14).fontColor(COLOR_SECONDARY).margin({ top: 4 });
               }
               .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 })
-              .visualEffect(PressGlow.effect(this.deviceCardPressed))
-              .onTouch((event: TouchEvent) => {
-                PressGlow.track(event, (pressed: boolean) => {
-                  this.deviceCardPressed = pressed;
-                });
-              })
-              .animation(PressGlow.ANIM)
               .onClick(() => this.onOpenDevices());
             }
             .width('100%').padding({ left: 16, right: 16, top: this.safeTop, bottom: this.safeBottom })

@@ -19,8 +19,6 @@ import {
 } from '../common/Theme';
 import { shouldShowErrorPage, shouldToast, notifyLoadFailed } from '../common/RefreshPolicy';
 import type { LoadKind } from '../common/RefreshPolicy';
-// 按压发光（HDS 点光源）：只追加 visualEffect + 按压状态，不改卡片原有样式
-import { PressGlow } from '../common/PressGlow';
 
 const COLOR_CARD_BG: ResourceColor = C_CARD;
 
@@ -47,8 +45,6 @@ export struct NetworkPage {
   @State private errorMsg: string = '';
   /** 每次加载 / 速率更新自增，强制 ForEach 重建卡片（否则 @Builder 的值传递参数不会刷新） */
   @State private dataVersion: number = 0;
-  /** 按压发光：当前被按住的接口卡（'' = 没有） */
-  @State private glowIface: string = '';
 
   /** 速率采样定时器；-1 表示未启动 */
   private rateTimer: number = -1;
@@ -302,14 +298,6 @@ export struct NetworkPage {
     .borderRadius(R_CARD)
     .shadow(ShadowStyle.OUTER_DEFAULT_SM)
     .margin({ bottom: 14 })
-    // 按住这张接口卡时表面点光源亮起（原有配色 / 圆角 / 阴影都没动）
-    .visualEffect(PressGlow.effect(this.glowIface === iface.name))
-    .onTouch((event: TouchEvent) => {
-      PressGlow.track(event, (pressed: boolean) => {
-        this.glowIface = pressed ? iface.name : '';
-      });
-    })
-    .animation(PressGlow.ANIM)
   }
 
   /** 一行「标签 —— 值」，值过长自动换行右对齐 */

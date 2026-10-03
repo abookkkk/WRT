@@ -115,8 +115,6 @@ HarmonyOS **默认禁止明文 HTTP**。想连局域网里的 `http://192.168.x.
 | **趋势曲线** | `Canvas` + `CanvasRenderingContext2D` 命令式绘制（能拿画布真实宽高自适应屏幕，也方便数据更新时直接重绘）；**双 Y 轴**——上下行各自按窗口内峰值缩放，避免一边大一边被压成直线 |
 | **统一设计令牌** | `entry/src/main/ets/common/Theme.ets` 集中管理颜色 / 圆角 / 间距 / 字号（颜色是资源引用，不是色值） |
 | **深色模式** | 调色板两套资源：`resources/base/element/color.json`（浅色）+ `resources/dark/element/color.json`（深色），由 `ApplicationContext.setColorMode()` 切换；`COLOR_MODE_NOT_SET` 即跟随系统。Canvas / 弹窗按钮这类收不了 `Resource` 的地方用 `Theme.colorString()` 运行时取色 |
-| **点光源特效（独立演示）** | HDS `hdsEffect.HdsEffectBuilder().pointLight()` + `.visualEffect()`：浅色组件表面 + 深色环境下模拟虚拟光源照射的折射质感，按压 / 开关可动态调强度（`@State` + `.animation` 300ms）。独立 Ability 承载，不影响主 App；详见下方「点光源特效演示」一节 |
-| **按压发光（已接进业务组件）** | 同一套点光源，以「按下即亮、松手回落」接到登录按钮 / 仪表盘卡片 / 无线页动作按钮 / 设备备注按钮上：统一走 `common/PressGlow.ets`（`PressGlow.effect(pressed)` + `PressGlow.track()` + `PressGlow.ANIM`），**只追加效果、不改任何原有颜色 / 尺寸 / 圆角 / 布局**，一行 `PressGlow.enabled = false` 可整体关掉 |
 | **应用图标** | 分层图标 `layered_image`：`foreground.png` 1024×1024（图标内容限制在中央 640 安全区内，圆角 / 圆形遮罩都不会切到图形）+ `background.png` 浅蓝→白渐变 + 启动图 `startIcon.png` 512×512 |
 
 > 💡 **实时速率怎么做的**：用 `luci-rpc.getNetworkDevices` —— **一次请求**就返回全部网卡的
@@ -141,11 +139,7 @@ entry/src/main/
 └── ets/
     ├── common/
     │   ├── Theme.ets                # 设计令牌（颜色引用 / 圆角 / 间距 / 字号）+ Canvas/弹窗取色函数
-    │   ├── SpatialMaterial.ets      # HDS 沉浸光感材质档位（SystemMaterialParams，按设备能力降档）
-    │   ├── PressGlow.ets            # 按压发光（HDS 点光源）：给现有组件追加 visualEffect + 按压状态
     │   └── RefreshPolicy.ets        # 统一下拉刷新策略（LoadKind 三档 + 失败反馈），五个 Tab 页共用
-    ├── components/
-    │   └── PointLightDemo.ets       # 点光源特效演示（HDS hdsEffect.pointLight，可整块塞进任意页面）
     ├── model/
     │   ├── OpenWrtClient.ets        # ubus JSON-RPC 客户端（核心，全部网络调用都在这）
     │   ├── OpenWrtModels.ets        # 数据模型 / 接口定义
@@ -154,87 +148,17 @@ entry/src/main/
     │   ├── GlobalContext.ets        # 全局 Context 单例
     │   ├── DeviceNotes.ets          # 设备备注（只存本机 preferences，键是 MAC）
     │   └── UpdateChecker.ets        # 检查更新（GitHub Releases API + releases.atom 兜底）
-    ├── pointlightability/
-    │   └── PointLightAbility.ets    # 只用来跑点光源演示页的独立 Ability（不碰业务）
     └── pages/
         ├── Index.ets                # 入口：未登录→LoginPage，已登录→HomePage
         ├── LoginPage.ets            # 登录页
-        ├── HomePage.ets             # HdsTabs 容器（4 个 Tab）+ HDS 二级页面栈
+        ├── HomePage.ets             # Tabs 容器（4 个 Tab）+ 二级页面栈（Navigation / NavDestination）
         ├── DashboardPage.ets        # 仪表盘
         ├── AboutPage.ets            # 关于（版本 / 联系方式 / 检查更新并下载）
         ├── NetworkPage.ets          # 网络接口
         ├── WifiPage.ets             # 无线网络（射频开关 / SSID / 密码 / 隐藏 / 客户端踢出 / 扫描）
         ├── DevicesPage.ets          # 在线设备（二级页面，从仪表盘卡片进入）
-        ├── OpenClashPage.ets        # OpenClash
-        └── PointLightDemoPage.ets   # 点光源特效演示页（配合 PointLightAbility）
+        └── OpenClashPage.ets        # OpenClash
 ```
-
----
-
-## 点光源特效演示（HDS `hdsEffect.pointLight`）
-
-独立演示 Ability，**不改动任何业务页面 / import / 业务逻辑**：
-
-```bash
-hdc shell aa start -a PointLightAbility -b com.abookkkk.wrt      # 直接起演示
-```
-
-- 组件：`entry/src/main/ets/components/PointLightDemo.ets`（想在自己页面里用，直接 `PointLightDemo()` 即可）
-- 页面 / Ability：`pages/PointLightDemoPage.ets` + `pointlightability/PointLightAbility.ets`
-- 演示内容：深色舞台（`#ff000000`）+ 浅色组件（`#ffa0a0a0`）；**光照类型切换**（边框 / 内容 / 边框 + 内容，默认最后一项）；
-  **光源类型切换**（SOFT / BRIGHT）、**光源颜色**（白 / 暖 / 冷）、`intensity` 与 `height` 滑杆；
-  **三种交互式触发**：按住按钮发光、按住浅色卡片整块发光、开关点亮（Toggle 自亮），全部走
-  `@State` + `.animation({ duration: 300, curve: Curve.Smooth })` 平滑过渡
-
-```ts
-Component()
-  .visualEffect(new hdsEffect.HdsEffectBuilder()
-    .pointLight({
-      sourceType: hdsEffect.PointLightSourceType.SOFT,          // ⚠️ 不写默认 NONE = 不发光
-      illuminatedType: hdsEffect.PointLightIlluminatedType.BORDER_CONTENT,
-      options: { color: Color.White, intensity: 2, height: 130 }
-    })
-    .buildEffect())
-  .animation({ duration: 300, curve: Curve.Smooth })
-```
-
-实测结论（模拟器 6.1.0.126 / x86_64，均可在 `hdc shell hilog` 里复现）：
-
-1. `sourceType` 默认是 `NONE`（= 不发光）—— 只写 `options` + `illuminatedType` 是**不亮**的，必须显式给 `SOFT` / `BRIGHT`；
-2. 该模拟器**不支持点光源渲染**：参数会被完整解析（`HDS_EFFECT` 日志里 `height 130` / `intensity 1.6` /
-   `sourceType 1` / `positionX·Y 50%` / `positionZ 220vp` / `illuminatedType 3` 全部 success），
-   紧接着渲染端打 `pointlight_model.cpp-Handle:48 PointLightUnsupportedHandler` —— 表面不会发生任何变化。
-   **光影效果要在支持 HDS 点光源的真机上才看得到**；模拟器上可以靠组件里的 `[PointLightDemo] ...`
-   交互日志确认按压 / 开关 / 切换都已生效；
-3. 组件表面必须**浅色**、环境必须**深色**，否则看不出折射层次；单个组件最多同时受 **12 个**光源照亮；
-4. 支持 `.visualEffect()` 的组件：Button / Toggle / Row / Column / Image / Flex / Stack / Select / Menu / MenuItem。
-
-### 已接进业务组件的按压发光
-
-统一封装在 [`entry/src/main/ets/common/PressGlow.ets`](entry/src/main/ets/common/PressGlow.ets)，调用点只加三行
-（一个 `@State` 按压标志 + `.visualEffect(PressGlow.effect(...))` + `.onTouch(PressGlow.track(...))` + `.animation(PressGlow.ANIM)`）：
-
-| 位置 | 组件 | 备注 |
-|---|---|---|
-| `LoginPage` | 「登 录」按钮（渐变胶囊） | 主操作，最先被看到 |
-| `DashboardPage` | 5 张卡片全接 | 实时网速 / 路由器信息 / 运行状态 / 内存使用率 / 在线设备（在线设备卡原有 `onClick` 不变，点开二级页照常） |
-| `NetworkPage` | 每张接口卡（LAN / WAN / WAN6 / LOOPBACK） | 按接口名区分 |
-| `WifiPage` | 射频卡、SSID 卡、扫描结果卡、说明卡 + 三个动作按钮 | 一个 `glowTarget` 字段按 `radioName` / `ap.section` 区分 |
-| `DevicesPage` | 每张设备卡 + 每台的「备注 / 改备注」按钮 | 按 MAC 区分 |
-| `AboutPage` | 4 张卡片全接 | 应用信息 / 联系方式 / 检查更新 / 说明 |
-| `OpenClashPage` | 4 张卡片全接 | 状态 / 概览 / 策略组 / 帮助 |
-
-参数：`intensity` 按住 3.0 / 松开 0、`height` 120vp、`sourceType` SOFT、`illuminatedType` BORDER_CONTENT、
-颜色白、过渡 300ms + `Curve.Smooth`。**总开关**：`PressGlow.enabled = false`（所有调用点一起失效，观感回到改动前）。
-
-两点如实说明：
-- 卡片本身用的是项目原有配色（浅色模式是半透明白、深色模式是半透明深色），所以**浅色模式下光感最明显**，
-  深色模式下会弱一些 —— 按约束没有为了效果去改组件配色；
-- 该模拟器不支持点光源渲染，所以模拟器上观感与改动前**完全一致**（已逐个页面截图比对确认无回归）；
-  按压链路用日志验证过：按住时 `SetPointLight intensity success 3.000000` / `height 120` / `sourceType 1` /
-  `illuminatedType 3`，松手 `0.000000`；已在 9 个面上逐个实测（仪表盘 3 张卡、网络接口卡、无线射频卡、
-  在线设备的设备卡与备注按钮、关于 2 张卡、Clash 状态卡），并确认**卡片内子组件点击不受影响**
-  （无线卡内的「收起 / 展开」照常工作）。
 
 ---
 
