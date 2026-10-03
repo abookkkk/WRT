@@ -20,7 +20,7 @@
  *   约束 5 亮色模式下 EXQUISITE 可能盖白叠层 → 亮色一律降到 GENTLE
  */
 
-import { hdsMaterial } from '@kit.UIDesignKit';
+import { hdsMaterial, SystemMaterialParams } from '@kit.UIDesignKit';
 
 /** 对外档位：用字符串表示，业务层不必到处 import HDS 枚举 */
 export type MaterialTier = 'adaptive' | 'exquisite' | 'gentle' | 'smooth';
@@ -43,15 +43,20 @@ export class SpatialMaterial {
       console.info('[SpatialMaterial] 设备支持的材质档位 = ' + JSON.stringify(types));
     } catch (e) {
       console.warn('[SpatialMaterial] 查询材质能力失败，按最低档处理: ' + JSON.stringify(e));
-      types = [hdsMaterial.MaterialType.SMOOTH];
+      // ⚠️ 不引用任何 MaterialType 成员：那套枚举的成员名尚未核实
+      types = [];
     }
     SpatialMaterial.cachedTypes = types;
     return types;
   }
 
-  /** 设备是否支持 EXQUISITE（强）档 */
+  /**
+   * 设备是否够强（可以上 EXQUISITE）。
+   * ⚠️ 保守启发式：`getSystemMaterialTypes()` 返回的是 `MaterialType[]`，而 MaterialType 的成员名还没核实，
+   * 所以这里只判"查询成功且非空"；等把 MaterialType 成员确认后可以改成精确匹配。
+   */
   static supportsExquisite(): boolean {
-    return SpatialMaterial.supportedTypes().indexOf(hdsMaterial.MaterialType.EXQUISITE) >= 0;
+    return SpatialMaterial.supportedTypes().length > 0;
   }
 
   /**
@@ -60,36 +65,37 @@ export class SpatialMaterial {
    * @param tier      期望档位；默认 'adaptive'
    * @param isLight   当前是否亮色模式（约束 5：亮色下 EXQUISITE 可能覆盖白色叠层 → 降 GENTLE）
    */
-  static params(tier: MaterialTier = 'adaptive', isLight: boolean = false): hdsMaterial.SystemMaterialParams {
+  static params(tier: MaterialTier = 'adaptive', isLight: boolean = false): SystemMaterialParams {
     return {
-      materialType: SpatialMaterial.resolveType(tier, isLight),
-      materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE,
+      // ⚠️ 只传 materialLevel：EXQUISITE / GENTLE / SMOOTH / ADAPTIVE 都属于 MaterialLevel（已核实）
+      // materialType 的成员名未核实，先不传（传错会编译失败，传 NONE 还会把材质关掉）
+      materialLevel: SpatialMaterial.resolveLevel(tier, isLight),
     };
   }
 
-  /** 实际生效的材质类型（把设备能力与亮色约束都算进去） */
-  private static resolveType(tier: MaterialTier, isLight: boolean): hdsMaterial.MaterialType {
+  /** 实际生效的材质档位（把设备能力与亮色约束都算进去） */
+  private static resolveLevel(tier: MaterialTier, isLight: boolean): hdsMaterial.MaterialLevel {
     if (tier === 'smooth') {
-      return hdsMaterial.MaterialType.SMOOTH;
+      return hdsMaterial.MaterialLevel.SMOOTH;
     }
     if (tier === 'gentle') {
-      return hdsMaterial.MaterialType.GENTLE;
+      return hdsMaterial.MaterialLevel.GENTLE;
     }
     if (tier === 'exquisite') {
       if (isLight) {
         // 约束 5：亮色下强档会压白叠层，降一档更耐看
         console.info('[SpatialMaterial] 亮色模式：EXQUISITE → GENTLE');
-        return hdsMaterial.MaterialType.GENTLE;
+        return hdsMaterial.MaterialLevel.GENTLE;
       }
       if (!SpatialMaterial.supportsExquisite()) {
         // 约束 3：低端设备不支持强档
         console.info('[SpatialMaterial] 设备不支持 EXQUISITE → GENTLE');
-        return hdsMaterial.MaterialType.GENTLE;
+        return hdsMaterial.MaterialLevel.GENTLE;
       }
-      return hdsMaterial.MaterialType.EXQUISITE;
+      return hdsMaterial.MaterialLevel.EXQUISITE;
     }
     // 约束 2：默认自适应
-    return hdsMaterial.MaterialType.ADAPTIVE;
+    return hdsMaterial.MaterialLevel.ADAPTIVE;
   }
 
   /**

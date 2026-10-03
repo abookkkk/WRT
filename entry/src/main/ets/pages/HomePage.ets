@@ -24,6 +24,7 @@ import { WifiPage } from './WifiPage';
 import { DevicesPage } from './DevicesPage';
 import { AboutPage } from './AboutPage';
 import { SpatialMaterial } from '../common/SpatialMaterial';
+import { SystemMaterialParams } from '@kit.UIDesignKit';
 
 import { OpenClashPage } from './OpenClashPage';
 import {
@@ -177,7 +178,7 @@ export struct HomePage {
   }
 
   /** 当前该用的沉浸光感参数（HDS 标题栏与 HdsTabs 悬浮栏共用同一份） */
-  private materialParams(): hdsMaterial.SystemMaterialParams {
+  private materialParams(): SystemMaterialParams {
     return SpatialMaterial.params('adaptive', this.isLightMode());
   }
 
