@@ -24,7 +24,7 @@ import { WifiPage } from './WifiPage';
 import { DevicesPage } from './DevicesPage';
 import { AboutPage } from './AboutPage';
 import { SpatialMaterial } from '../common/SpatialMaterial';
-import { HdsNavigation, ScrollEffectType, SystemMaterialParams } from '@kit.UIDesignKit';
+import { HdsNavigation, HdsNavDestination, ScrollEffectType, SystemMaterialParams } from '@kit.UIDesignKit';
 
 import { OpenClashPage } from './OpenClashPage';
 import {
@@ -565,7 +565,7 @@ export struct HomePage {
    */
   @Builder
   devicesDestination() {
-    NavDestination() {
+    HdsNavDestination() {
       Stack({ alignContent: Alignment.TopStart }) {
         this.navBackground();
 
@@ -591,7 +591,7 @@ export struct HomePage {
   /** 二级页面：关于（版本信息 / 联系方式 / 检查更新并自动下载） */
   @Builder
   aboutDestination() {
-    NavDestination() {
+    HdsNavDestination() {
       Stack({ alignContent: Alignment.TopStart }) {
         this.navBackground();
 
