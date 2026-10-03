@@ -135,7 +135,15 @@ export struct DevicesPage {
                   }
                   .width('100%').padding(16).backgroundColor(COLOR_CARD_BG)
                   .borderRadius(18).shadow(ShadowStyle.OUTER_DEFAULT_SM)
-                  .margin({ bottom: 10 });
+                  .margin({ bottom: 10 })
+                  // 按住整张设备卡时表面点光源亮起（原有配色 / 圆角 / 阴影都没动）
+                  .visualEffect(PressGlow.effect(this.glowMac === 'card:' + device.mac))
+                  .onTouch((event: TouchEvent) => {
+                    PressGlow.track(event, (pressed: boolean) => {
+                      this.glowMac = pressed ? 'card:' + device.mac : '';
+                    });
+                  })
+                  .animation(PressGlow.ANIM);
                 }
               }, (device: DhcpLease, index?: number) => {
                 // key 里带上备注：备注改了才会重建这张卡（ArkUI 会复用条目节点，不换 key 不刷新）

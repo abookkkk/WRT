@@ -29,6 +29,8 @@ import {
   F_SECTION, F_BODY, F_CAPTION, F_TINY,
   R_CARD, R_CHIP, SP_S, SP_M, SP_L, SP_XL, TAB_BAR_SPACE, colorString
 } from '../common/Theme';
+// 按压发光（HDS 点光源）：只追加 visualEffect + 按压状态，不改卡片原有样式
+import { PressGlow } from '../common/PressGlow';
 
 const COLOR_CARD_BG: ResourceColor = C_CARD;
 
@@ -53,6 +55,8 @@ export struct OpenClashPage {
   @State private busy: boolean = false;
   /** 每次加载自增，强制 ForEach 重建（@Builder 值传递参数不会刷新） */
   @State private dataVersion: number = 0;
+  /** 按压发光：当前被按住的卡片（'' = 没有） */
+  @State private glowCard: string = '';
 
   // ---- OpenClash 自身 ----
   @State private isRunning: boolean = false;
@@ -199,6 +203,14 @@ export struct OpenClashPage {
     .width('100%').padding(SP_XL).backgroundColor(COLOR_CARD_BG)
     .borderRadius(R_CARD).shadow(ShadowStyle.OUTER_DEFAULT_SM)
     .margin({ bottom: 14 })
+    // 按住卡片时表面点光源亮起（原有配色 / 圆角 / 阴影都没动）
+    .visualEffect(PressGlow.effect(this.glowCard === 'status'))
+    .onTouch((event: TouchEvent) => {
+      PressGlow.track(event, (pressed: boolean) => {
+        this.glowCard = pressed ? 'status' : '';
+      });
+    })
+    .animation(PressGlow.ANIM)
   }
 
   /** 代理概览：节点数 / 连接数 / 累计流量 / 内核内存 */
@@ -232,6 +244,14 @@ export struct OpenClashPage {
     .width('100%').padding(SP_XL).backgroundColor(COLOR_CARD_BG)
     .borderRadius(R_CARD).shadow(ShadowStyle.OUTER_DEFAULT_SM)
     .margin({ bottom: 14 })
+    // 按住卡片时表面点光源亮起（原有配色 / 圆角 / 阴影都没动）
+    .visualEffect(PressGlow.effect(this.glowCard === 'overview'))
+    .onTouch((event: TouchEvent) => {
+      PressGlow.track(event, (pressed: boolean) => {
+        this.glowCard = pressed ? 'overview' : '';
+      });
+    })
+    .animation(PressGlow.ANIM)
   }
 
   /** 策略组：显示当前节点，Selector 可直接切换 */
@@ -260,6 +280,14 @@ export struct OpenClashPage {
     .width('100%').padding(SP_XL).backgroundColor(COLOR_CARD_BG)
     .borderRadius(R_CARD).shadow(ShadowStyle.OUTER_DEFAULT_SM)
     .margin({ bottom: 14 })
+    // 按住卡片时表面点光源亮起（原有配色 / 圆角 / 阴影都没动）
+    .visualEffect(PressGlow.effect(this.glowCard === 'groups'))
+    .onTouch((event: TouchEvent) => {
+      PressGlow.track(event, (pressed: boolean) => {
+        this.glowCard = pressed ? 'groups' : '';
+      });
+    })
+    .animation(PressGlow.ANIM)
   }
 
   @Builder
@@ -343,6 +371,13 @@ export struct OpenClashPage {
     }
     .width('100%').padding(SP_XL).backgroundColor(COLOR_CARD_BG)
     .borderRadius(R_CARD).shadow(ShadowStyle.OUTER_DEFAULT_SM)
+    .visualEffect(PressGlow.effect(this.glowCard === 'help'))
+    .onTouch((event: TouchEvent) => {
+      PressGlow.track(event, (pressed: boolean) => {
+        this.glowCard = pressed ? 'help' : '';
+      });
+    })
+    .animation(PressGlow.ANIM)
   }
 
   // ==================== 通用小部件 ====================

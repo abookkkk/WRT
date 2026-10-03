@@ -183,7 +183,14 @@ export struct WifiPage {
                 }
                 .width('100%').padding(16)
                 .backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM)
-                .margin({ bottom: 12 });
+                .margin({ bottom: 12 })
+                .visualEffect(PressGlow.effect(this.glowTarget === 'scanList'))
+                .onTouch((event: TouchEvent) => {
+                  PressGlow.track(event, (pressed: boolean) => {
+                    this.glowTarget = pressed ? 'scanList' : '';
+                  });
+                })
+                .animation(PressGlow.ANIM);
               }
 
               // ===== 说明 =====
@@ -203,7 +210,14 @@ export struct WifiPage {
                   .fontSize(12).fontColor(C_TEXT_3);
               }
               .width('100%').padding(16)
-              .backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM);
+              .backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM)
+              .visualEffect(PressGlow.effect(this.glowTarget === 'help'))
+              .onTouch((event: TouchEvent) => {
+                PressGlow.track(event, (pressed: boolean) => {
+                  this.glowTarget = pressed ? 'help' : '';
+                });
+              })
+              .animation(PressGlow.ANIM);
             }
             .width('100%').padding({ left: 16, right: 16, top: this.safeTop, bottom: this.safeBottom })
           }
@@ -398,7 +412,15 @@ export struct WifiPage {
     }
     .width('100%').padding(16)
     .backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM)
-    .margin({ bottom: 12 });
+    .margin({ bottom: 12 })
+    // 按住整张射频卡时表面点光源亮起（原有配色 / 圆角 / 阴影都没动）
+    .visualEffect(PressGlow.effect(this.glowTarget === 'radio:' + radio.radioName))
+    .onTouch((event: TouchEvent) => {
+      PressGlow.track(event, (pressed: boolean) => {
+        this.glowTarget = pressed ? 'radio:' + radio.radioName : '';
+      });
+    })
+    .animation(PressGlow.ANIM);
   }
 
   // ==================== 单个 SSID 区块 ====================
@@ -538,7 +560,15 @@ export struct WifiPage {
     .padding(14)
     .backgroundColor(C_FILL)
     .borderRadius(14)
-    .margin({ bottom: 10 });
+    .margin({ bottom: 10 })
+    // 按住这张 SSID 卡时表面点光源亮起
+    .visualEffect(PressGlow.effect(this.glowTarget === 'ap:' + ap.section))
+    .onTouch((event: TouchEvent) => {
+      PressGlow.track(event, (pressed: boolean) => {
+        this.glowTarget = pressed ? 'ap:' + ap.section : '';
+      });
+    })
+    .animation(PressGlow.ANIM);
   }
 
   /**

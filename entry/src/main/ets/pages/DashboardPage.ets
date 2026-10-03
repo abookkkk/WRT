@@ -74,6 +74,12 @@ export struct DashboardPage {
   @State private rateCardPressed: boolean = false;
   /** 「在线设备」卡片是否被按住 */
   @State private deviceCardPressed: boolean = false;
+  /** 「路由器信息」卡片是否被按住 */
+  @State private routerCardPressed: boolean = false;
+  /** 「运行状态」卡片是否被按住 */
+  @State private statusCardPressed: boolean = false;
+  /** 「内存使用率」卡片是否被按住 */
+  @State private memoryCardPressed: boolean = false;
 
   // ---- 实时网速 ----
   @State private wanRxRate: number = 0;
@@ -209,14 +215,28 @@ export struct DashboardPage {
                 Text('路由器信息').fontSize(16).fontWeight(FontWeight.Bold).width('100%');
                 this.routerInfoRows();
               }
-              .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
+              .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 })
+              .visualEffect(PressGlow.effect(this.routerCardPressed))
+              .onTouch((event: TouchEvent) => {
+                PressGlow.track(event, (pressed: boolean) => {
+                  this.routerCardPressed = pressed;
+                });
+              })
+              .animation(PressGlow.ANIM);
 
               // 卡片 2：运行状态
               Column() {
                 Text('运行状态').fontSize(16).fontWeight(FontWeight.Bold).width('100%');
                 this.runStatusRows();
               }
-              .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
+              .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 })
+              .visualEffect(PressGlow.effect(this.statusCardPressed))
+              .onTouch((event: TouchEvent) => {
+                PressGlow.track(event, (pressed: boolean) => {
+                  this.statusCardPressed = pressed;
+                });
+              })
+              .animation(PressGlow.ANIM);
 
               // 卡片 3：内存使用率
               Column() {
@@ -238,7 +258,14 @@ export struct DashboardPage {
                 }
                 .width('100%').margin({ top: 6 });
               }
-              .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 });
+              .width('100%').padding(20).backgroundColor(C_CARD).borderRadius(20).shadow(ShadowStyle.OUTER_DEFAULT_SM).margin({ bottom: 14 })
+              .visualEffect(PressGlow.effect(this.memoryCardPressed))
+              .onTouch((event: TouchEvent) => {
+                PressGlow.track(event, (pressed: boolean) => {
+                  this.memoryCardPressed = pressed;
+                });
+              })
+              .animation(PressGlow.ANIM);
 
               // 卡片 4：在线设备
               Column() {

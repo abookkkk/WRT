@@ -25,6 +25,8 @@ import {
   C_CARD, C_FILL,
   F_SECTION, F_BODY, F_CAPTION, F_TINY, R_CARD, SP_S, SP_M, SP_L, SP_XL, ICON_M, colorString
 } from '../common/Theme';
+// 按压发光（HDS 点光源）：只追加 visualEffect + 按压状态，不改卡片原有样式
+import { PressGlow } from '../common/PressGlow';
 
 @Component
 export struct AboutPage {
@@ -40,6 +42,8 @@ export struct AboutPage {
   @State private hasUpdate: boolean = false;
   /** 最新版本信息 */
   @State private release: ReleaseInfo | null = null;
+  /** 按压发光：当前被按住的卡片（'' = 没有） */
+  @State private glowCard: string = '';
 
   private checker: UpdateChecker = new UpdateChecker();
 
@@ -73,7 +77,15 @@ export struct AboutPage {
         }
         .width('100%').padding(SP_XL)
         .backgroundColor(C_CARD).borderRadius(R_CARD).shadow(ShadowStyle.OUTER_DEFAULT_SM)
-        .margin({ bottom: 14 });
+        .margin({ bottom: 14 })
+        // 按住卡片时表面点光源亮起（原有配色 / 圆角 / 阴影都没动）
+        .visualEffect(PressGlow.effect(this.glowCard === 'app'))
+        .onTouch((event: TouchEvent) => {
+          PressGlow.track(event, (pressed: boolean) => {
+            this.glowCard = pressed ? 'app' : '';
+          });
+        })
+        .animation(PressGlow.ANIM);
 
         // ===== 联系方式 =====
         Column() {
@@ -87,7 +99,14 @@ export struct AboutPage {
         }
         .width('100%').padding(SP_XL)
         .backgroundColor(C_CARD).borderRadius(R_CARD).shadow(ShadowStyle.OUTER_DEFAULT_SM)
-        .margin({ bottom: 14 });
+        .margin({ bottom: 14 })
+        .visualEffect(PressGlow.effect(this.glowCard === 'links'))
+        .onTouch((event: TouchEvent) => {
+          PressGlow.track(event, (pressed: boolean) => {
+            this.glowCard = pressed ? 'links' : '';
+          });
+        })
+        .animation(PressGlow.ANIM);
 
         // ===== 检查更新 =====
         Column() {
@@ -147,7 +166,14 @@ export struct AboutPage {
         }
         .width('100%').padding(SP_XL)
         .backgroundColor(C_CARD).borderRadius(R_CARD).shadow(ShadowStyle.OUTER_DEFAULT_SM)
-        .margin({ bottom: 14 });
+        .margin({ bottom: 14 })
+        .visualEffect(PressGlow.effect(this.glowCard === 'update'))
+        .onTouch((event: TouchEvent) => {
+          PressGlow.track(event, (pressed: boolean) => {
+            this.glowCard = pressed ? 'update' : '';
+          });
+        })
+        .animation(PressGlow.ANIM);
 
         // ===== 说明 =====
         Column() {
@@ -163,7 +189,14 @@ export struct AboutPage {
             .fontSize(F_TINY).fontColor(C_TEXT_3).width('100%').lineHeight(16);
         }
         .width('100%').padding(SP_XL)
-        .backgroundColor(C_CARD).borderRadius(R_CARD).shadow(ShadowStyle.OUTER_DEFAULT_SM);
+        .backgroundColor(C_CARD).borderRadius(R_CARD).shadow(ShadowStyle.OUTER_DEFAULT_SM)
+        .visualEffect(PressGlow.effect(this.glowCard === 'notes'))
+        .onTouch((event: TouchEvent) => {
+          PressGlow.track(event, (pressed: boolean) => {
+            this.glowCard = pressed ? 'notes' : '';
+          });
+        })
+        .animation(PressGlow.ANIM);
       }
       .width('100%').padding(SP_L)
     }

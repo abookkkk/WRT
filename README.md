@@ -217,9 +217,12 @@ Component()
 | 位置 | 组件 | 备注 |
 |---|---|---|
 | `LoginPage` | 「登 录」按钮（渐变胶囊） | 主操作，最先被看到 |
-| `DashboardPage` | 「实时网速」卡片、「在线设备」卡片 | 在线设备卡原有 `onClick` 不变，点开二级页照常 |
-| `WifiPage` | 「保存射频设置」「+ 新增 SSID」「扫描 …」按钮 | 用一个 `glowTarget` 字段按 `radioName` 区分，同屏只会亮一个 |
-| `DevicesPage` | 每台设备的「备注 / 改备注」按钮 | 按 MAC 区分 |
+| `DashboardPage` | 5 张卡片全接 | 实时网速 / 路由器信息 / 运行状态 / 内存使用率 / 在线设备（在线设备卡原有 `onClick` 不变，点开二级页照常） |
+| `NetworkPage` | 每张接口卡（LAN / WAN / WAN6 / LOOPBACK） | 按接口名区分 |
+| `WifiPage` | 射频卡、SSID 卡、扫描结果卡、说明卡 + 三个动作按钮 | 一个 `glowTarget` 字段按 `radioName` / `ap.section` 区分 |
+| `DevicesPage` | 每张设备卡 + 每台的「备注 / 改备注」按钮 | 按 MAC 区分 |
+| `AboutPage` | 4 张卡片全接 | 应用信息 / 联系方式 / 检查更新 / 说明 |
+| `OpenClashPage` | 4 张卡片全接 | 状态 / 概览 / 策略组 / 帮助 |
 
 参数：`intensity` 按住 3.0 / 松开 0、`height` 120vp、`sourceType` SOFT、`illuminatedType` BORDER_CONTENT、
 颜色白、过渡 300ms + `Curve.Smooth`。**总开关**：`PressGlow.enabled = false`（所有调用点一起失效，观感回到改动前）。
@@ -228,7 +231,10 @@ Component()
 - 卡片本身用的是项目原有配色（浅色模式是半透明白、深色模式是半透明深色），所以**浅色模式下光感最明显**，
   深色模式下会弱一些 —— 按约束没有为了效果去改组件配色；
 - 该模拟器不支持点光源渲染，所以模拟器上观感与改动前**完全一致**（已逐个页面截图比对确认无回归）；
-  按压链路用日志验证过：按住时 `SetPointLight intensity success 3.000000`、松手 `0.000000`（`height 120` / `sourceType 1` / `illuminatedType 3`）。
+  按压链路用日志验证过：按住时 `SetPointLight intensity success 3.000000` / `height 120` / `sourceType 1` /
+  `illuminatedType 3`，松手 `0.000000`；已在 9 个面上逐个实测（仪表盘 3 张卡、网络接口卡、无线射频卡、
+  在线设备的设备卡与备注按钮、关于 2 张卡、Clash 状态卡），并确认**卡片内子组件点击不受影响**
+  （无线卡内的「收起 / 展开」照常工作）。
 
 ---
 
