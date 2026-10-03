@@ -24,7 +24,7 @@ import { WifiPage } from './WifiPage';
 import { DevicesPage } from './DevicesPage';
 import { AboutPage } from './AboutPage';
 import { SpatialMaterial } from '../common/SpatialMaterial';
-import { SystemMaterialParams } from '@kit.UIDesignKit';
+import { HdsNavigation, ScrollEffectType, SystemMaterialParams } from '@kit.UIDesignKit';
 
 import { OpenClashPage } from './OpenClashPage';
 import {
@@ -214,7 +214,7 @@ export struct HomePage {
   build() {
     // 二级页面（在线设备）用 Navigation 的页面栈：推入的 NavDestination 会盖住整页（含底部标签栏），
     // 自带返回手势与系统返回键处理，比"再塞一个 Tab"更像正常的二级页面。
-    Navigation(this.pathStack) {
+    HdsNavigation(this.pathStack) {
       Stack({ alignContent: Alignment.TopStart }) {
         // ===== 渐变背景 =====
         // 只让**背景**延伸到状态栏/导航栏后面（沉浸式），
@@ -473,6 +473,15 @@ export struct HomePage {
       .width('100%')
       .height('100%')
     }
+    .titleBar({
+      style: {
+        scrollEffectOpts: {
+          enableScrollEffect: true,
+          scrollEffectType: ScrollEffectType.IMMERSIVE_GRADIENT_BLUR
+        },
+        systemMaterialEffect: this.materialParams()
+      }
+    })
     .mode(NavigationMode.Stack)
     .hideTitleBar(true)
     .navDestination(this.pageMap)
