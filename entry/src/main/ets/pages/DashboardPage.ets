@@ -45,6 +45,8 @@ export struct DashboardPage {
   @StorageProp('safeBottom') safeBottom: number = TAB_BAR_SPACE + 16;  private client!: OpenWrtClient;
   /** 点「在线设备」卡片 → 打开二级页面（由 HomePage 传入） */
   onOpenDevices: () => void = () => {};
+  /** 点实时网速卡片 → 打开测速二级页面（由 HomePage 传入） */
+  onOpenSpeedTest: () => void = () => {};
 
 
   @State private isLoading: boolean = true;
@@ -182,6 +184,23 @@ export struct DashboardPage {
                   .onReady(() => {
                     this.drawChart();
                   });
+
+                Row() {
+                  Text(this.wanDevice.length > 0 ? ('出口设备 · ' + this.wanDevice) : '正在识别出口设备')
+                    .fontSize(F_TINY).fontColor(C_TEXT_3).layoutWeight(1)
+                    .maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis });
+                  Row() {
+                    Text('开始测速').fontSize(F_TINY).fontColor(C_PRIMARY);
+                    SymbolGlyph($r('sys.symbol.chevron_right'))
+                      .fontSize(13).fontColor([C_PRIMARY])
+                      .renderingStrategy(SymbolRenderingStrategy.SINGLE)
+                      .margin({ left: 2 });
+                  }
+                  .alignItems(VerticalAlign.Center)
+                  .onClick(() => this.onOpenSpeedTest());
+                }
+                .width('100%').margin({ top: SP_M })
+                .alignItems(VerticalAlign.Center);
 
               }
               .width('100%').padding(SP_XL).backgroundColor(C_CARD)

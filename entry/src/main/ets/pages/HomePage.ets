@@ -23,6 +23,7 @@ import { NetworkPage } from './NetworkPage';
 import { WifiPage } from './WifiPage';
 import { DevicesPage } from './DevicesPage';
 import { AboutPage } from './AboutPage';
+import { SpeedTestPage } from './SpeedTestPage';
 import { SpatialMaterial } from '../common/SpatialMaterial';
 import {
   HdsNavigation, HdsNavDestination, HdsTabs, HdsTabsController, HdsTabsFloatingStyle,
@@ -268,7 +269,7 @@ export struct HomePage {
           // 沉浸光感材质都由系统负责，点选与左右滑动切页也还是 Tabs 的老行为。
           HdsTabs({ barPosition: BarPosition.End, index: this.currentIndex, controller: this.tabsController }) {
             TabContent() {
-              DashboardPage({ client: this.client, onOpenDevices: () => this.openDevices() })
+              DashboardPage({ client: this.client, onOpenDevices: () => this.openDevices(), onOpenSpeedTest: () => this.openSpeedTest() })
             }
             .tabBar(this.tabItem(0, '仪表盘'))
 
@@ -361,6 +362,11 @@ export struct HomePage {
     this.pathStack.pushPathByName('about', null);
   }
 
+  /** 打开二级页面：测速 */
+  private openSpeedTest(): void {
+    this.pathStack.pushPathByName('speedTest', null);
+  }
+
 
   /**
    * 页面栈分发。Navigation 的 navDestination 只回调页面名，
@@ -372,6 +378,8 @@ export struct HomePage {
       this.devicesDestination();
     } else if (name === 'about') {
       this.aboutDestination();
+    } else if (name === 'speedTest') {
+      this.speedTestDestination();
     }
   }
 
@@ -443,6 +451,32 @@ export struct HomePage {
     .titleBar({
       style: { systemMaterialEffect: this.materialParams(), originalStyle: { contentStyle: this.titleContentStyle() } },
       content: { title: { mainTitle: '关于' } },
+      avoidLayoutSafeArea: true
+    })
+    .titleMode(HdsNavDestinationTitleMode.MINI)
+    .hideTitleBar(false)
+    .withTheme({ enableThemeColorMode: true });
+  }
+
+  /** 二级页面：实时测速 */
+  @Builder
+  speedTestDestination() {
+    HdsNavDestination() {
+      Stack({ alignContent: Alignment.TopStart }) {
+        this.navBackground();
+        Column() {
+          SpeedTestPage({ client: this.client })
+        }
+        .width('100%')
+        .height('100%')
+        .padding({ top: this.topInset + HDS_MINI_TITLE_BAR_HEIGHT });
+      }
+      .width('100%')
+      .height('100%');
+    }
+    .titleBar({
+      style: { systemMaterialEffect: this.materialParams(), originalStyle: { contentStyle: this.titleContentStyle() } },
+      content: { title: { mainTitle: '网络测速' } },
       avoidLayoutSafeArea: true
     })
     .titleMode(HdsNavDestinationTitleMode.MINI)
