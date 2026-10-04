@@ -57,6 +57,19 @@ export class SpeedTestHistory {
     }
   }
 
+  /** 清空本机测速缓存（不影响路由器配置、登录信息和设备备注）。 */
+  async clearAll(): Promise<boolean> {
+    if (this.pref === null) return false;
+    this.records = [];
+    try {
+      await this.persist();
+      return true;
+    } catch (e) {
+      console.error('[SpeedTestHistory] 清理测速缓存失败: ' + JSON.stringify(e));
+      return false;
+    }
+  }
+
   snapshot(): SpeedTestRecord[] {
     const out: SpeedTestRecord[] = [];
     for (let i = 0; i < this.records.length; i++) {

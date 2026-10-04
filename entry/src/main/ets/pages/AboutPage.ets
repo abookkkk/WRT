@@ -16,6 +16,8 @@
 import { promptAction } from '@kit.ArkUI';
 import { common, Want } from '@kit.AbilityKit';
 import { bundleManager } from '@kit.AbilityKit';
+import { GlobalContext } from '../model/GlobalContext';
+import { SpeedTestHistory } from '../model/SpeedTestHistory';
 import {
   UpdateChecker, ReleaseInfo,
   REPO_URL, REPO_ISSUES_URL, REPO_RELEASES_URL
@@ -40,11 +42,14 @@ export struct AboutPage {
   @State private hasUpdate: boolean = false;
   /** 最新版本信息 */
   @State private release: ReleaseInfo | null = null;
+  @State private junkCount: number = 0;
+  @State private cleaningJunk: boolean = false;
 
   private checker: UpdateChecker = new UpdateChecker();
 
   aboutToAppear(): void {
     this.loadAppInfo();
+    this.loadJunkInfo();
   }
 
   build() {
@@ -69,6 +74,32 @@ export struct AboutPage {
           .width('100%').alignItems(VerticalAlign.Center);
 
           Text('用 HarmonyOS（ArkTS + ArkUI）写的 OpenWrt 路由器管理客户端，直接调路由器自带的 ubus JSON-RPC，不需要装 luci-mod-rpc。')
+            .fontSize(F_TINY).fontColor(C_TEXT_3).width('100%').lineHeight(16).margin({ top: SP_M });
+        }
+        .width('100%').padding(SP_XL)
+        .backgroundColor(C_CARD).borderRadius(R_CARD).shadow(ShadowStyle.OUTER_DEFAULT_SM)
+        .margin({ bottom: 14 });
+
+        // ===== 清理垃圾 =====
+        Column() {
+          Row() {
+            Column() {
+              Text('清理垃圾').fontSize(F_SECTION).fontWeight(FontWeight.Bold).fontColor(C_TEXT_1);
+              Text(this.junkCount > 0
+                ? ('测速缓存 · ' + String(this.junkCount) + ' 条记录')
+                : '暂时没有可清理的缓存')
+                .fontSize(F_TINY).fontColor(C_TEXT_3).margin({ top: 4 });
+            }
+            .alignItems(HorizontalAlign.Start).layoutWeight(1);
+            Button(this.cleaningJunk ? '清理中…' : '清理垃圾')
+              .fontSize(F_CAPTION).height(32).type(ButtonType.Capsule)
+              .backgroundColor(this.junkCount > 0 ? C_PRIMARY : C_FILL)
+              .fontColor(this.junkCount > 0 ? Color.White : C_TEXT_3)
+              .enabled(!this.cleaningJunk && this.junkCount > 0)
+              .onClick(() => this.confirmCleanJunk());
+          }
+          .width('100%').alignItems(VerticalAlign.Center);
+          Text('只清理本应用生成的测速缓存，不会删除登录信息、设备备注或路由器数据。')
             .fontSize(F_TINY).fontColor(C_TEXT_3).width('100%').lineHeight(16).margin({ top: SP_M });
         }
         .width('100%').padding(SP_XL)
@@ -203,6 +234,49 @@ export struct AboutPage {
       this.bundleName = info.name;
     } catch (e) {
       console.error('[About] 读版本信息失败: ' + JSON.stringify(e));
+    }
+  }
+
+  private async loadJunkInfo(): Promise<void> {
+    try {
+      const context: common.Context | null = GlobalContext.getInstance().getContext();
+      if (context === null) return;
+      const history: SpeedTestHistory = new SpeedTestHistory();
+      await history.init(context);
+      this.junkCount = history.snapshot().length;
+    } catch (e) {
+      console.warn('[About] 读取可清理缓存失败: ' + JSON.stringify(e));
+    }
+  }
+
+  private async confirmCleanJunk(): Promise<void> {
+    const result = await promptAction.showDialog({
+      title: '清理垃圾',
+      message: '将清除本机保存的测速历史记录，共 ' + String(this.junkCount) + ' 条。登录信息和设备备注不会受影响。',
+      buttons: [
+        { text: '取消', color: colorString(C_TEXT_2, '#666666') },
+        { text: '清理', color: colorString(C_PRIMARY, '#0A59F7') }
+      ]
+    });
+    if (result.index !== 1) return;
+    this.cleaningJunk = true;
+    try {
+      const context: common.Context | null = GlobalContext.getInstance().getContext();
+      if (context === null) return;
+      const history: SpeedTestHistory = new SpeedTestHistory();
+      await history.init(context);
+      const ok: boolean = await history.clearAll();
+      if (ok) {
+        this.junkCount = 0;
+        promptAction.showToast({ message: '垃圾清理完成', duration: 1600 });
+      } else {
+        promptAction.showToast({ message: '清理失败，请稍后重试', duration: 1800 });
+      }
+    } catch (e) {
+      promptAction.showToast({ message: '清理失败，请稍后重试', duration: 1800 });
+      console.error('[About] 清理垃圾失败: ' + JSON.stringify(e));
+    } finally {
+      this.cleaningJunk = false;
     }
   }
 
